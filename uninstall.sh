@@ -14,6 +14,8 @@ BIN_DIR="$HOME/.local/bin"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
+# The installer writes the quoted form; the bare form is still recognised as ours
+STATUSLINE_COMMAND="\"$STATUSLINE_DEST\""
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
@@ -194,7 +196,7 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     sl=$(jq -r '(.statusLine | if type == "object" then .command else . end) // empty' "$SETTINGS_FILE" 2>/dev/null || true)
     # A native jq.exe under Git Bash ends its lines with CRLF
     sl=${sl%$'\r'}
-    if [[ "$sl" == *"cctokmon"* ]]; then
+    if [[ "$sl" == "$STATUSLINE_COMMAND" || "$sl" == "$STATUSLINE_DEST" ]]; then
         write_settings 'del(.statusLine)' ||
             { printf 'Cannot update %s; it was left unchanged.\n' "$SETTINGS_FILE" >&2; exit 1; }
         ok "Removed statusLine from ${SETTINGS_FILE}"
