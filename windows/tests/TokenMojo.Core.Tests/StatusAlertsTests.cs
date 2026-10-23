@@ -191,20 +191,6 @@ public class StatusAlertsTests
     }
 
     [Fact]
-    public void Diff_SameSessionIdFromTwoSources_NewestCopyWinsWithoutThrowing()
-    {
-        // Arrange
-        Baseline baseline = BaselineOf(Session("a", SessionStatus.Working));
-        SessionSnapshot[] current = [Session("a", SessionStatus.NeedsInput, sinceSeconds: 5), Session("a", SessionStatus.Working, updatedMinutesAgo: 10)];
-
-        // Act
-        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(baseline, current, LongTurn);
-
-        // Assert
-        Assert.Equal(["a"], alerts.Select(a => a.SessionId));
-    }
-
-    [Fact]
     public void Diff_UnnamedSession_IsTitledByItsFolder()
     {
         // Arrange
@@ -217,19 +203,6 @@ public class StatusAlertsTests
 
         // Assert
         Assert.Equal("proj", alerts[0].Title);
-    }
-
-    [Fact]
-    public void Advance_SameSessionIdFromTwoSources_KeepsTheNewestCopy()
-    {
-        // Arrange
-        SessionSnapshot[] current = [Session("a", SessionStatus.Ready), Session("a", SessionStatus.Working, updatedMinutesAgo: 10)];
-
-        // Act
-        Baseline baseline = StatusAlerts.Advance(null, current, Now);
-
-        // Assert
-        Assert.Equal(SessionStatus.Ready, baseline["a"].Status);
     }
 
     [Fact]
@@ -304,14 +277,76 @@ public class StatusAlertsTests
         Assert.Equal("2 sessions updated", StatusAlerts.Balloon(alerts).Title);
     }
 
+    [Fact]
+    public void Advance_SessionReadingAsNoStatus_KeepsTheStatusItHadBefore()
+    {
+        // Arrange
+        SessionSnapshot[] waiting = [Session("a", SessionStatus.NeedsInput)];
+        Baseline baseline = StatusAlerts.Advance(BaselineOf(waiting), [Session("a", SessionStatus.None)], Now.AddSeconds(5));
+
+        // Act
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(baseline, waiting, LongTurn);
+
+        // Assert
+        Assert.Empty(alerts);
+    }
+
+    [Fact]
+    public void Advance_SessionFirstSeenWithNoStatus_IsRecordedAsNone()
+    {
+        // Act
+        Baseline baseline = StatusAlerts.Advance(null, [Session("a", SessionStatus.None)], Now);
+
+        // Assert
+        Assert.Equal(SessionStatus.None, baseline["a"].Status);
+    }
+
+    [Fact]
+    public void Balloon_MoreThanThreeAlerts_ListsThreeThenCountsTheRest()
+    {
+        // Arrange
+        StatusAlert[] alerts = Enumerable.Range(1, 5)
+            .Select(i => new StatusAlert($"s{i}", StatusAlertKind.NeedsInput, $"app{i}", "Needs input"))
+            .ToArray();
+
+        // Act
+        AlertBalloon balloon = StatusAlerts.Balloon(alerts);
+
+        // Assert
+        Assert.Equal("5 sessions need you", balloon.Title);
+        Assert.Equal("app1: Needs input\napp2: Needs input\napp3: Needs input\nand 2 more", balloon.Text);
+    }
+
+    [Fact]
+    public void Balloon_VeryLongSessionTitles_StayWithinTheNotificationLimits()
+    {
+        // Arrange
+        string longTitle = new('w', 300);
+        StatusAlert[] alerts =
+        [
+            new("a", StatusAlertKind.NeedsInput, longTitle, "Needs input"),
+            new("b", StatusAlertKind.NeedsInput, longTitle, "Needs input"),
+            new("c", StatusAlertKind.NeedsInput, longTitle, "Needs input"),
+        ];
+
+        // Act
+        AlertBalloon several = StatusAlerts.Balloon(alerts);
+        AlertBalloon single = StatusAlerts.Balloon([alerts[0]]);
+
+        // Assert
+        Assert.InRange(several.Title.Length, 1, 62);
+        Assert.InRange(several.Text.Length, 1, 254);
+        Assert.InRange(single.Title.Length, 1, 62);
+    }
+
     private static Baseline BaselineOf(params SessionSnapshot[] sessions) => StatusAlerts.Advance(null, sessions, Now);
 
     private static SessionSnapshot Session(
-        string id, SessionStatus status, int sinceSeconds = 0, int? turnSeconds = null, int updatedMinutesAgo = 0)
+        string id, SessionStatus status, int sinceSeconds = 0, int? turnSeconds = null)
     {
         BridgeState state = BridgeState.Parse(Payloads.Full) with { SessionId = id };
         DateTimeOffset since = Now.AddSeconds(sinceSeconds);
         DateTimeOffset? turnStarted = turnSeconds is { } seconds ? since.AddSeconds(-seconds) : null;
-        return new SessionSnapshot(id, state, Now.AddMinutes(-updatedMinutesAgo), status, since, turnStarted);
+        return new SessionSnapshot(id, state, Now, status, since, turnStarted);
     }
 }

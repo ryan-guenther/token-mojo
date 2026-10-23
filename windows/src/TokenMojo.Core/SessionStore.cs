@@ -35,15 +35,23 @@ public static class SessionStore
     public static IReadOnlyList<SessionSnapshot> LoadSessions(IEnumerable<ClaudeSource> sources, DateTimeOffset now)
     {
         DateTimeOffset cutoff = now - RecentWindow;
-        List<SessionSnapshot> sessions = new();
+        Dictionary<string, Candidate> newestById = new();
         foreach (ClaudeSource source in sources)
-            sessions.AddRange(LoadSource(source, cutoff));
-        return sessions.OrderByDescending(s => s.Updated).ToList();
+        {
+            foreach (Candidate candidate in LoadSource(source, cutoff))
+            {
+                // The same session can be on two sources (say a Windows and a WSL copy): keep the newest, so
+                // rows, counts and alerts all see one.
+                if (!newestById.TryGetValue(candidate.Session.Id, out Candidate? kept) || candidate.IsNewerThan(kept))
+                    newestById[candidate.Session.Id] = candidate;
+            }
+        }
+        return newestById.Values.Select(c => c.Session).OrderByDescending(s => s.Updated).ToList();
     }
 
-    private static List<SessionSnapshot> LoadSource(ClaudeSource source, DateTimeOffset cutoff)
+    private static List<Candidate> LoadSource(ClaudeSource source, DateTimeOffset cutoff)
     {
-        List<SessionSnapshot> sessions = new();
+        List<Candidate> sessions = new();
         DirectoryInfo dir = new(source.SessionsDir);
         // The directory appears after the first bridge write.
         if (!dir.Exists) return sessions;
@@ -55,10 +63,12 @@ public static class SessionStore
                 if (updated <= cutoff) continue;
                 if (TryRead(file) is not { } state) continue;
                 // An events file that is there but unreadable is skipped until the next refresh, like the bridge file.
-                if (!TryReadEvents(file, out SessionEventState? events)) continue;
-                sessions.Add(new SessionSnapshot(
-                    Path.GetFileNameWithoutExtension(file.Name), state, updated,
-                    events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted));
+                if (!TryReadEvents(file, out SessionEventState? events, out DateTime eventsWritten)) continue;
+                sessions.Add(new Candidate(
+                    new SessionSnapshot(
+                        Path.GetFileNameWithoutExtension(file.Name), state, updated,
+                        events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted),
+                    eventsWritten));
             }
         }
         // One unreadable source (a WSL distro that stopped mid-read) must not hide the others.
@@ -84,15 +94,16 @@ public static class SessionStore
     }
 
     // The hook script appends to <id>.events beside <id>.json. No file means a session without hooks (null events);
-    // false means the file exists but could not be read. Lines that are not events never fail the read.
-    private static bool TryReadEvents(FileInfo sessionFile, out SessionEventState? events)
+    // false means the file is there but could not be read. Lines that are not events never fail the read.
+    private static bool TryReadEvents(FileInfo sessionFile, out SessionEventState? events, out DateTime written)
     {
         events = null;
+        written = DateTime.MinValue;
         string path = Path.ChangeExtension(sessionFile.FullName, ".events");
-        if (!File.Exists(path)) return true;
         try
         {
             using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            written = File.GetLastWriteTimeUtc(path);
             long start = Math.Max(0, stream.Length - EventsTailBytes);
             stream.Seek(start, SeekOrigin.Begin);
             using StreamReader reader = new(stream);
@@ -101,10 +112,21 @@ public static class SessionStore
             events = SessionEvents.Reduce(start > 0 ? lines.Skip(1) : lines);
             return true;
         }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return true;
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return false;
         }
+    }
+
+    private sealed record Candidate(SessionSnapshot Session, DateTime EventsWritten)
+    {
+        // Ties on the bridge file are broken by whichever copy's events were written last.
+        public bool IsNewerThan(Candidate other) =>
+            (Session.Updated, EventsWritten).CompareTo((other.Session.Updated, other.EventsWritten)) > 0;
     }
 
     // FileShare.Delete lets the bridge rename a new file over this one while it is being read on Windows.

@@ -178,6 +178,39 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadSessions_SameSessionInTwoSources_KeepsOnlyTheNewestCopy()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now.AddMinutes(-5));
+        _temp.Write("win/cctokmon-sessions/a.events", """{"t":1000,"e":"SessionStart"}""" + "\n", Now);
+        _temp.Write("wsl/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now.AddMinutes(-1));
+        _temp.Write("wsl/cctokmon-sessions/a.events", """{"t":1000,"e":"UserPromptSubmit"}""" + "\n", Now.AddMinutes(-9));
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.Working, session.Status);
+        Assert.Equal(Now.AddMinutes(-1), session.Updated);
+    }
+
+    [Fact]
+    public void LoadSessions_SameSessionUpdatedAtTheSameTime_KeepsTheCopyWithTheNewerEventsFile()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        _temp.Write("win/cctokmon-sessions/a.events", """{"t":1000,"e":"SessionStart"}""" + "\n", Now.AddMinutes(-10));
+        _temp.Write("wsl/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        _temp.Write("wsl/cctokmon-sessions/a.events", """{"t":1000,"e":"UserPromptSubmit"}""" + "\n", Now);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.Working, session.Status);
+    }
+
+    [Fact]
     public void LoadSessions_LongEventsFile_ReadsOnlyTheLastSixtyFourKilobytes()
     {
         // Arrange
