@@ -49,6 +49,13 @@ public sealed class LaunchTargetsTests
     }
 
     [Fact]
+    public void UserFor_DistroWhereOnlyRootHasClaudeFolders_IsRoot()
+    {
+        // Act / Assert
+        Assert.Equal("root", LaunchTargets.UserFor([new ClaudeSource("Ubuntu:root", "s", "d", "Ubuntu", "root")], "Ubuntu"));
+    }
+
+    [Fact]
     public void UserFor_DistroWithoutClaudeFolders_IsNull()
     {
         // Act / Assert
