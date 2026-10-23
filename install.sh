@@ -33,6 +33,16 @@ warn() { printf '%s⚠%s  %s\n' "${YELLOW}" "${R}" "$*"; }
 err()  { printf '%s✗%s %s\n' "${RED}" "${R}" "$*" >&2; }
 info() { printf '  %s\n' "$*"; }
 
+# True for the symlink or the Windows launcher this installer writes as `tm`
+is_our_tm() {
+    local path="$1"
+    if [[ -L "$path" ]]; then
+        [[ "$(readlink "$path")" == */cctokmon-tm.sh ]]
+    else
+        grep -qx '# tm launcher' "$path" 2>/dev/null
+    fi
+}
+
 # ── Detect OS and package manager ──────────────────────────────────────────────
 OS="$(uname -s)"
 IS_WINDOWS=0
@@ -210,6 +220,19 @@ cp "${SCRIPT_DIR}/cctokmon-hook.sh" "$HOOK_DEST"
 chmod +x "$HOOK_DEST"
 ok "Hook:       ${HOOK_DEST}"
 
+# tm starts a tagged Claude Code session; leave a `tm` that is not ours alone
+chmod +x "${SCRIPT_DIR}/cctokmon-tm.sh"
+if [[ -e "${BIN_DIR}/tm" || -L "${BIN_DIR}/tm" ]] && ! is_our_tm "${BIN_DIR}/tm"; then
+    warn "${BIN_DIR}/tm already exists and is not cctokmon's; leaving it alone."
+elif [[ "$IS_WINDOWS" -eq 1 ]]; then
+    printf '#!/usr/bin/env bash\n# tm launcher\nexec bash %q "$@"\n' "${SCRIPT_DIR}/cctokmon-tm.sh" > "${BIN_DIR}/tm"
+    chmod +x "${BIN_DIR}/tm"
+    ok "Launcher: ${BIN_DIR}/tm → ${SCRIPT_DIR}/cctokmon-tm.sh"
+else
+    ln -sf "${SCRIPT_DIR}/cctokmon-tm.sh" "${BIN_DIR}/tm"
+    ok "Symlinked: ${BIN_DIR}/tm → ${SCRIPT_DIR}/cctokmon-tm.sh"
+fi
+
 # PATH notice
 if ! command -v cctokmon >/dev/null 2>&1; then
     warn "${BIN_DIR} is not in your PATH."
@@ -310,7 +333,8 @@ printf '\n%sInstallation complete!%s\n\n' "${BOLD}${GREEN}" "${R}"
 printf 'Run the monitor:\n'
 printf '  %scctokmon%s              # bridge mode (real-time, requires statusline)\n' "${BOLD}" "${R}"
 printf '  %scctokmon --mode polling%s   # polling mode (stats-cache.json)\n' "${BOLD}" "${R}"
-printf '  %scctokmon --check%s       # verify setup\n\n' "${BOLD}" "${R}"
+printf '  %scctokmon --check%s       # verify setup\n' "${BOLD}" "${R}"
+printf '  %stm [prompt...]%s         # start Claude Code in this tab, findable from TokenMojo\n\n' "${BOLD}" "${R}"
 
 if [[ "${configure_sl:-0}" -eq 1 ]]; then
     printf 'The statusline bridge is active. Claude Code will update cctokmon\n'

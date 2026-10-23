@@ -16,6 +16,7 @@ public partial class FlyoutWindow : Window
         InitializeComponent();
         WindowChrome.Apply(this, round: true);
         Deactivated += (_, _) => HideFlyout();
+        Dashboard.SessionActed += (_, _) => HideFlyout();
     }
 
     public event EventHandler? PopOutRequested;

@@ -16,6 +16,7 @@ TokenMojo is the GUI on top of the same bridge files: a macOS menu bar app (`men
 cctokmon.sh              # Main monitor — entry point
 cctokmon-statusline.sh   # Companion statusline script (called by Claude Code on every interaction)
 cctokmon-hook.sh         # Claude Code hook (called on session events) that appends each session's events to a log
+cctokmon-tm.sh           # `tm`: starts or resumes Claude Code in the current tab and tags the tab title for TokenMojo
 install.sh               # Installer: deps check, symlink, statusline and hook config
 uninstall.sh             # Clean removal
 config.example           # Config template copied to ~/.config/cctokmon/config on install
@@ -83,6 +84,7 @@ bash windows/build.sh [target-dir]
 - On Windows only jq needs installing (Git Bash ships tput and awk); winget's links dir is added to `PATH` for the re-verify, since the running shell predates it.
 - Copies `cctokmon-statusline.sh` to `~/.claude/cctokmon-statusline.sh`.
 - Optionally sets `statusLine` in `~/.claude/settings.json` via `jq`. The correct format is an object: `{"type": "command", "command": "/path/to/script"}` — not a plain string (Claude Code's `/doctor` will flag a plain string as invalid).
+- Links `cctokmon-tm.sh` as `~/.local/bin/tm` the same way (a launcher marked `# tm launcher` under Git Bash). A `tm` it did not write is left alone, and `uninstall.sh` removes only ours.
 - Copies `cctokmon-hook.sh` to `~/.claude/` and, prompting once, appends `{"hooks":[{"type":"command","command":"<dest>"}]}` to each of `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `Stop` and `SessionEnd` in `settings.json`. Idempotent, and other hooks are left alone. `uninstall.sh` removes only entries whose command is ours.
 
 ### Session status hook (`cctokmon-hook.sh`)
@@ -101,13 +103,21 @@ bash windows/build.sh [target-dir]
 
 `declare -A PRICE_INPUT PRICE_OUTPUT` near top of `cctokmon.sh`. Used **only** in polling mode for cost estimation. In bridge mode `cost.total_cost_usd` from the statusline JSON is authoritative.
 
+### `tm` (`cctokmon-tm.sh`)
+
+- `tm [--wt NAME] [--prompt-file PATH] [--] [prompt...]` generates a session id, prints the OSC 0 title `TM <name> <id8>` (id8 is the first 8 characters of the id; name is `--wt` or the folder), then `exec`s `claude --session-id <id> -n <name> [-w NAME] [-- prompt]`. `tm --resume <id>` tags the tab the same way and runs `claude --resume <id>`.
+- It exports `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, because Claude Code otherwise rewrites the title; this also turns off Claude's own title updates and terminal status reports in that session.
+- `--prompt-file` reads the prompt, deletes the file, and fails if it is missing. Bad arguments (unknown flag, missing value, a worktree name outside `[A-Za-z0-9._-]`) print usage to stderr and exit 2.
+- Resuming does not depend on the folder: `claude --resume <id>` finds the session from the repository root, or any folder, after its worktree was removed (it continues without the worktree).
+
 ### Windows tray app (`windows/`)
 
 - Shares everything outside the UI with the Mac app: the same bridge script, installer and file contract (`cctokmon-state.json`, `cctokmon-sessions/`, `CCTOKMON_STATE_FILE` / `CCTOKMON_SESSIONS_DIR`). Do not add a Windows-specific bridge; under native Windows, Claude Code runs the bash bridge through Git Bash.
 - Display rules mirror `menubar/TokenMojo.swift` and must stay in step with it: `livePercent` (null once `resets_at` has passed), severity thresholds 50/80, the 12-hour session window, "active" within 10 minutes, at most 10 session rows, reset/percent/cost wording. They live in `TokenMojo.Core` (`Gauges`, `Dashboard`, `SessionStore`) so they are unit-tested; the WPF project only binds to `DashboardModel`.
 - Sources: `ClaudeDirLocator` returns `%USERPROFILE%\.claude` plus `\\wsl.localhost\<distro>\home\*\.claude` (and `/root`) for distros listed by `wsl.exe --list --running --quiet` (UTF-16LE output). Only running distros are read, because touching a stopped distro's share boots it. Discovery reruns every minute; the bridge files are polled every 5 seconds off the UI thread.
 - Session status differs from the Mac app: the Windows app reads the hook's `.events` log (`SessionEvents`, `StatusAlerts`), so a row is needs input / ready / working / ended. Only a session with no events file falls back to the Mac app's 10-minute "active" rule. The list orders needs input, ready, working, no status, ended, then newest first, before the 10-row cap.
-- Alerts: a balloon tip on entering needs input, and on working → ready after a turn of at least `longTurnSeconds` (default 30) from `%APPDATA%\TokenMojo\settings.json`. The first load is a baseline and alerts nothing. An invalid settings file is shown in the flyout; defaults are never silently used. The tray ring's centre shows the waiting count (needs input plus ready) in place of the percentage.
+- Alerts: a balloon tip on entering needs input, and on any change into ready after a turn of at least `longTurnSeconds` (default 30) from `%APPDATA%\TokenMojo\settings.json`. The first load is a baseline and alerts nothing. An existing settings file that is invalid is shown in the flyout and defaults are not used; when the file is absent and cannot be created, defaults are used. The tray ring's centre shows the waiting count (needs input plus ready) in place of the percentage.
+- Click-to-focus and resume: `SessionWindows.Find` matches the `tm` tag's id8 as a whole token in the title of a Windows Terminal window (class `CASCADIA_HOSTING_WINDOW_CLASS`, whose title is the active tab's), `SessionActions.Decide` picks focus, confirm-resume, resume or unavailable, and `ResumeCommand` builds the `wt.exe` argument list (a list, so paths with spaces survive; `-u` the session's Linux user; the folder is `workspace.project_dir`, else `current_dir`, then the repository root when the worktree is gone, then `~`; `tm` is called as `~/.local/bin/tm`, unquoted, since a login shell may not have it on PATH; the session id must be a UUID). Anything that touches the WSL share runs under `Task.Run`, never on the UI thread. All of it is in Core; `SessionControl`, `TerminalWindows` and `Native` only execute it. Sources carry their `Distro`; a Windows-source session cannot be resumed. A balloon is skipped when the foreground window's title matches the session, and clicking one focuses (or resumes) the first session it lists.
 - The current state is the most recently written `cctokmon-state.json` across sources (rate limits are per account). Sessions from every source are merged into one list, newest first.
 - Failures stay per source: a distro that stops or denies access mid-read is skipped, never allowed to blank the others or throw out of the timer tick. Bridge files are opened with `FileShare.Delete` so the bridge's `mv` can rename over a file TokenMojo is reading on Windows.
 - Tray icon: one ring for the worst gauge, drawn by the same `RingGauge.Draw` as the dashboard rings and wrapped as a PNG `.ico`; taskbar light/dark comes from `SystemUsesLightTheme`, app light/dark from `AppsUseLightTheme`.

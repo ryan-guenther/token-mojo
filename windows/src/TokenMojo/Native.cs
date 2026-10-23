@@ -2,12 +2,14 @@ using System.Runtime.InteropServices;
 
 namespace TokenMojo;
 
-/// <summary>The few Win32 calls WPF has no API for: exact window placement, per-monitor DPI and DWM chrome.</summary>
+/// <summary>The few Win32 calls WPF has no API for: exact window placement, per-monitor DPI, DWM chrome and other programs' windows.</summary>
 internal static partial class Native
 {
     public const uint NoSizeNoZOrderNoActivate = 0x0001 | 0x0004 | 0x0010;
+    public const int ShowRestore = 9;
     private const uint MonitorDefaultToNearest = 2;
     private const int EffectiveDpi = 0;
+    private const int TextCapacity = 512;
 
     public static double ScaleAt(System.Drawing.Point point)
     {
@@ -25,8 +27,53 @@ internal static partial class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
+    public static unsafe string ClassName(IntPtr window)
+    {
+        char* buffer = stackalloc char[TextCapacity];
+        return new string(buffer, 0, GetClassNameW(window, buffer, TextCapacity));
+    }
+
+    public static unsafe string WindowText(IntPtr window)
+    {
+        char* buffer = stackalloc char[TextCapacity];
+        return new string(buffer, 0, GetWindowTextW(window, buffer, TextCapacity));
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindowVisible(IntPtr window);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsIconic(IntPtr window);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ShowWindow(IntPtr window, int command);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetForegroundWindow(IntPtr window);
+
+    [LibraryImport("user32.dll")]
+    public static partial IntPtr GetForegroundWindow();
+
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+
+    [LibraryImport("user32.dll")]
+    private static unsafe partial int GetClassNameW(IntPtr window, char* buffer, int capacity);
+
+    [LibraryImport("user32.dll")]
+    private static unsafe partial int GetWindowTextW(IntPtr window, char* buffer, int capacity);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

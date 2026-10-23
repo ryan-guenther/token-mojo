@@ -20,7 +20,7 @@ public sealed record BridgeState(
 
 public sealed record BridgeModel(string? DisplayName);
 
-public sealed record BridgeWorkspace(string? CurrentDir);
+public sealed record BridgeWorkspace(string? CurrentDir, string? ProjectDir);
 
 public sealed record BridgeCost(double? TotalCostUsd, long? TotalLinesAdded, long? TotalLinesRemoved);
 
