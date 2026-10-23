@@ -210,16 +210,18 @@ The statusline script must complete in under 100ms (Claude Code requirement). It
 
 ### Session status
 
-`cctokmon-hook.sh` is a separate Claude Code hook that records what each session is doing, in `~/.claude/cctokmon-sessions/<session_id>.status`. The installer offers to register it for six events, adding an entry beside any hooks you already have:
+`cctokmon-hook.sh` is a separate Claude Code hook that records what each session is doing, in `~/.claude/cctokmon-sessions/<session_id>.status`. The installer offers to register it for seven events, adding an entry beside any hooks you already have:
 
 | Event | Status |
 |---|---|
-| `SessionStart`, `Stop` | ready |
-| `UserPromptSubmit`, `PreToolUse` | working |
+| `SessionStart` (except after a compact), `Stop` | ready |
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
 | `Notification` for a permission prompt or other question | needs input |
 | `SessionEnd` | ended |
 
 The hook never prints anything and always exits 0, so it cannot interrupt a session. Restart running sessions after registering it. The Windows app uses these files; the macOS app and `cctokmon` do not.
+
+Needs input stays until the approved tool finishes, since that is the next event the hook sees. Events from subagents never clear it, because the main agent is still waiting on you.
 
 Limits: pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
 
@@ -284,7 +286,7 @@ Windows hides new tray icons under the **^** arrow beside the clock at first; dr
 - **The icon** is one ring for whichever of the 5-hour limit, 7-day limit and context window is highest, with that percentage inside: green under 50%, orange from 50%, red from 80%. `!` means 100% or more, and `–` means there is no data yet. A limit whose window has reset shows "Reset — awaiting update" in the dashboard until your next Claude Code interaction refreshes it.
 - **Hover** for all three gauges plus the session cost.
 - **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours. In that list the highlighted row is the current session, and the dot shows its [status](#session-status): red needs input, teal ready for your next prompt, green working, grey ended. Sessions that never reported a status show green if active in the last 10 minutes and grey otherwise. Sessions needing you are listed first.
-- **Alerts** appear as a notification when a session needs input, and when a turn that took 30 seconds or more finishes. While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts.
+- **Alerts** appear as a notification when a session needs input, and when a turn that took `longTurnSeconds` or more finishes (30 by default, see [Settings](#settings)). While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts.
 - **Pop Out Window** opens the same dashboard in a window that stays on top; closing it remembers where it was.
 - **Launch at Login** (in the dashboard or the right-click menu) starts it automatically. **Quit** is in both too.
 

@@ -83,13 +83,15 @@ bash windows/build.sh [target-dir]
 - On Windows only jq needs installing (Git Bash ships tput and awk); winget's links dir is added to `PATH` for the re-verify, since the running shell predates it.
 - Copies `cctokmon-statusline.sh` to `~/.claude/cctokmon-statusline.sh`.
 - Optionally sets `statusLine` in `~/.claude/settings.json` via `jq`. The correct format is an object: `{"type": "command", "command": "/path/to/script"}` — not a plain string (Claude Code's `/doctor` will flag a plain string as invalid).
-- Copies `cctokmon-hook.sh` to `~/.claude/` and, prompting once, appends `{"hooks":[{"type":"command","command":"<dest>"}]}` to each of `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `Notification`, `Stop` and `SessionEnd` in `settings.json`. Idempotent, and other hooks are left alone. `uninstall.sh` removes only entries whose command is ours.
+- Copies `cctokmon-hook.sh` to `~/.claude/` and, prompting once, appends `{"hooks":[{"type":"command","command":"<dest>"}]}` to each of `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop` and `SessionEnd` in `settings.json`. Idempotent, and other hooks are left alone. `uninstall.sh` removes only entries whose command is ours.
 
 ### Session status hook (`cctokmon-hook.sh`)
 
 - Writes `~/.claude/cctokmon-sessions/<session_id>.status` (`{"status", "since", "turn_started"}`) atomically, with the same `session_id` guard as the bridge. The `.status` extension keeps it out of the `*.json` scan.
 - It must never write to stdout (`SessionStart` and `UserPromptSubmit` stdout is added to Claude's context) and must always exit 0.
-- Mapping: `SessionStart` and `Stop` → `ready`; `UserPromptSubmit` and `PreToolUse` → `working` (`UserPromptSubmit` sets `turn_started`); `Notification` with type `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` or `agent_needs_input` → `needs_input` (other types write nothing); `SessionEnd` → `ended`.
+- Mapping: `SessionStart` and `Stop` → `ready`; `UserPromptSubmit`, `PreToolUse` and `PostToolUse` → `working` (`UserPromptSubmit` sets `turn_started`); `Notification` with type `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` or `agent_needs_input` → `needs_input` (other types write nothing); `SessionEnd` → `ended`. `SessionStart` with `source` `compact` writes nothing. Needs input lasts until the approved tool's `PostToolUse`.
+- Events with a non-empty `agent_id` (subagents) never move a session out of `needs_input`. A previous status file that is not a JSON object counts as no previous state.
+- The read-modify-write per session is serialised with a `mkdir` lock (`<id>.status.lock`; about 2s wait, stale after 10s, skipped if not taken), writes go through a per-process temp file, and the 7-day cleanup also removes leftover `*.status.*.tmp` and `*.status.lock`.
 
 ### Config file
 
