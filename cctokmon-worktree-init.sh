@@ -32,10 +32,23 @@ status=$(git -C "$cwd" submodule status 2>/dev/null) || exit 0
 grep -q '^-' <<<"$status" || exit 0
 
 printf 'cctokmon: initialising submodules in %s\n' "$cwd"
-# Nothing can answer a prompt, so one would hang until the hook times out: git's own, the credential
-# manager's, and ssh's (host key or password), the last kept on top of any ssh command already configured
-ssh_command=${GIT_SSH_COMMAND:-$(git -C "$cwd" config core.sshCommand || echo ssh)}
-if ! GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_SSH_COMMAND="$ssh_command -o BatchMode=yes" \
+# Nothing can answer a prompt, so one would hang until the hook times out. git's own and the credential
+# manager's are switched off below. ssh's (host key or password) is switched off only for OpenSSH, and
+# by adding to the command git would run anyway, found in git's own order: GIT_SSH_COMMAND, core.sshCommand,
+# GIT_SSH, then ssh. Another program (plink, a wrapper) may not take the option, so it is left as it is.
+ssh_settings=()
+ssh_command=${GIT_SSH_COMMAND:-}
+[[ -n "$ssh_command" ]] || ssh_command=$(git -C "$cwd" config core.sshCommand 2>/dev/null)
+if [[ -n "$ssh_command" || -z "${GIT_SSH:-}" ]]; then
+    : "${ssh_command:=ssh}"
+    ssh_variant=${GIT_SSH_VARIANT:-$(git -C "$cwd" config ssh.variant 2>/dev/null)}
+    ssh_program=${ssh_command%% *}
+    ssh_program=${ssh_program##*[/\\]}
+    if [[ "$ssh_variant" =~ ^(|ssh|auto)$ && "$ssh_program" =~ ^ssh(\.exe)?$ ]]; then
+        ssh_settings=(GIT_SSH_COMMAND="$ssh_command -o BatchMode=yes")
+    fi
+fi
+if ! env GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never "${ssh_settings[@]}" \
     git -C "$cwd" submodule update --init --recursive </dev/null; then
     printf 'cctokmon: submodule update failed in %s\n' "$cwd"
 fi
