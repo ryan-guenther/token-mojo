@@ -31,19 +31,32 @@ public static class SessionEvents
             // A compact reloads the context mid-turn, so it is not a new session.
             "SessionStart" when hookEvent.Source == "compact" => state,
             "SessionStart" => Enter(state, SessionStatus.Ready, t, null),
+            // A resumed session sends SessionStart first, so a prompt does not revive an ended one.
+            "UserPromptSubmit" when ended => state,
+            // A subagent's result arrives as another prompt in the middle of the turn.
+            "UserPromptSubmit" when state.Status is SessionStatus.Working or SessionStatus.NeedsInput =>
+                Enter(state, SessionStatus.Working, t, state.TurnStarted),
             "UserPromptSubmit" => Enter(state, SessionStatus.Working, t, t),
-            // The prompt that raised needs-input is still open until a tool finishes.
-            "PreToolUse" when state.Status is SessionStatus.NeedsInput or SessionStatus.Ended => state,
-            "PreToolUse" or "PostToolUse" when state.Status == SessionStatus.Ready => Enter(state, SessionStatus.Working, t, t),
-            "PostToolUse" when ended => state,
-            "PreToolUse" or "PostToolUse" => Enter(state, SessionStatus.Working, t, state.TurnStarted),
+            "PreToolUse" or "PostToolUse" or "PostToolUseFailure" => ToolEvent(state, hookEvent),
             "Notification" when !ended && hookEvent.Notification is { } type && NeedsInputNotifications.Contains(type) =>
-                Enter(state, SessionStatus.NeedsInput, t, state.TurnStarted),
+                Enter(state, SessionStatus.NeedsInput, t, StartsTurn(state) ? t : state.TurnStarted),
             "Stop" when !ended => Enter(state, SessionStatus.Ready, t, state.TurnStarted),
             "SessionEnd" => Enter(state, SessionStatus.Ended, t, null),
             _ => state,
         };
     }
+
+    private static SessionEventState ToolEvent(SessionEventState state, HookEvent hookEvent)
+    {
+        if (state.Status == SessionStatus.Ended) return state;
+        // A subagent starting a tool says nothing about the prompt the main agent is waiting on.
+        if (hookEvent.Name == "PreToolUse" && state.Status == SessionStatus.NeedsInput && hookEvent.Agent is not null)
+            return state;
+        // Ready or no status means this tool starts a turn: a background wake, or a turn whose start was cut off.
+        return Enter(state, SessionStatus.Working, hookEvent.Time, StartsTurn(state) ? hookEvent.Time : state.TurnStarted);
+    }
+
+    private static bool StartsTurn(SessionEventState state) => state.Status is SessionStatus.Ready or SessionStatus.None;
 
     // Since is when the status was entered, so an event that leaves the status as it was keeps it.
     private static SessionEventState Enter(SessionEventState state, SessionStatus status, DateTimeOffset t, DateTimeOffset? turnStarted) =>
@@ -60,7 +73,7 @@ public static class SessionEvents
                 return null;
             if (!root.TryGetProperty("e", out JsonElement name) || name.ValueKind != JsonValueKind.String) return null;
             return new HookEvent(
-                DateTimeOffset.FromUnixTimeSeconds(seconds), name.GetString()!, Text(root, "n"), Text(root, "s"));
+                DateTimeOffset.FromUnixTimeSeconds(seconds), name.GetString()!, Text(root, "n"), Text(root, "s"), Text(root, "a"));
         }
         catch (Exception e) when (e is JsonException or ArgumentOutOfRangeException)
         {
@@ -69,7 +82,9 @@ public static class SessionEvents
     }
 
     private static string? Text(JsonElement root, string property) =>
-        root.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        root.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } text
+            ? text
+            : null;
 
-    private sealed record HookEvent(DateTimeOffset Time, string Name, string? Notification, string? Source);
+    private sealed record HookEvent(DateTimeOffset Time, string Name, string? Notification, string? Source, string? Agent);
 }
