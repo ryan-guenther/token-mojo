@@ -210,18 +210,18 @@ The statusline script must complete in under 100ms (Claude Code requirement). It
 
 ### Session status
 
-`cctokmon-hook.sh` is a separate Claude Code hook that logs what each session is doing, one line per event, in `~/.claude/cctokmon-sessions/<session_id>.events` (event name and time only, never your prompts or tool input). TokenMojo reads the end of that log to get the status. The installer offers to register it for seven events, adding an entry beside any hooks you already have:
+`cctokmon-hook.sh` is a separate Claude Code hook that logs what each session is doing, one line per event, in `~/.claude/cctokmon-sessions/<session_id>.events` (event name and time only, never your prompts or tool input). TokenMojo reads the end of that log to get the status. The installer offers to register it for eight events, adding an entry beside any hooks you already have:
 
 | Event | Status |
 |---|---|
 | `SessionStart` (except after a compact), `Stop` | ready |
-| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | working |
 | `Notification` for a permission prompt or other question | needs input |
 | `SessionEnd` | ended |
 
 The hook never prints anything and always exits 0, so it cannot interrupt a session. Restart running sessions after registering it. The Windows app uses these files; the macOS app and `cctokmon` do not.
 
-Needs input stays until a tool finishes, since that is the next event after the prompt; starting a tool, including a subagent's, does not clear it. A session that has ended stays ended until it starts again.
+Needs input clears when the main agent next starts or finishes a tool, which is what follows an approval or a denial. A subagent starting a tool does not clear it. A session that has ended stays ended until it starts again, and a prompt alone does not revive it.
 
 Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
 
