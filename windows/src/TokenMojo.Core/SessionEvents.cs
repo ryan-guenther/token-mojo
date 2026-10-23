@@ -21,13 +21,17 @@ public static class SessionEvents
     {
         SessionEventState none = new(SessionStatus.None, null, null);
         Tracking tracking = new(none, ImmutableDictionary<string, DateTimeOffset>.Empty, none);
+        DateTimeOffset latest = DateTimeOffset.MinValue;
         foreach (string line in lines)
         {
-            if (TryParse(line) is { } hookEvent)
-                tracking = Apply(Settle(tracking, hookEvent.Time), hookEvent);
+            if (TryParse(line) is not { } hookEvent) continue;
+            tracking = Apply(Settle(tracking, hookEvent.Time), hookEvent);
+            if (hookEvent.Time > latest) latest = hookEvent.Time;
         }
-        tracking = Settle(tracking, now);
-        return tracking.Shown with { Subagents = LiveCount(tracking, now) };
+        // A now before the last line is clock skew; judging liveness at that earlier time would revive expired subagents.
+        DateTimeOffset settledAt = now > latest ? now : latest;
+        tracking = Settle(tracking, settledAt);
+        return tracking.Shown with { Subagents = LiveCount(tracking, settledAt) };
     }
 
     private static Tracking Apply(Tracking tracking, HookEvent hookEvent)
@@ -48,7 +52,7 @@ public static class SessionEvents
         SessionEventState? interrupted = tracking.Interrupted;
         if (next.Status != SessionStatus.NeedsInput)
             (promptAgent, interrupted) = (null, null);
-        else if (hookEvent.Name == "Notification")
+        else if (hookEvent.Name == "Notification" && IsQuestion(hookEvent))
         {
             // A second prompt replaces the first as the one shown and owned; the first is not restored when it clears.
             promptAgent = hookEvent.Agent;
@@ -78,9 +82,14 @@ public static class SessionEvents
         };
     }
 
-    // Back to what the prompt interrupted.
+    // Back to what the prompt interrupted. A log that began at the prompt has nothing to return to: the turn is working.
     private static SessionEventState Release(Tracking tracking, DateTimeOffset t) =>
-        tracking.Interrupted ?? Enter(tracking.Main, SessionStatus.Working, t, tracking.Main.TurnStarted);
+        tracking.Interrupted is { Status: not SessionStatus.None } interrupted
+            ? interrupted
+            : Enter(tracking.Main, SessionStatus.Working, t, tracking.Main.TurnStarted);
+
+    private static bool IsQuestion(HookEvent hookEvent) =>
+        hookEvent.Notification is { } type && NeedsInputNotifications.Contains(type);
 
     // An id not heard from for ten minutes counts as finished, so a lost SubagentStop cannot pin the session.
     private static Tracking Settle(Tracking tracking, DateTimeOffset at)
@@ -91,17 +100,16 @@ public static class SessionEvents
         // Only working to ready by expiry is dated by the expiry itself; any other change found here happened by now.
         bool expired = tracking.Shown.Status == SessionStatus.Working && ShownStatus(tracking, at) == SessionStatus.Ready
             && !tracking.Subagents.IsEmpty;
-        return Show(tracking, at, expired ? tracking.Subagents.Values.Max() + SubagentLifetime : at);
+        DateTimeOffset expiry = expired ? tracking.Subagents.Values.Max() + SubagentLifetime : at;
+        return Show(tracking, at, expiry < at ? expiry : at);
     }
 
-    // Since is never after the moment the state was computed for.
     private static Tracking Show(Tracking tracking, DateTimeOffset at, DateTimeOffset changedAt)
     {
         SessionStatus status = ShownStatus(tracking, at);
         // Since is when the shown status was entered, so an event that leaves it as it was keeps it.
-        DateTimeOffset since = (status == tracking.Shown.Status ? tracking.Shown.Since : changedAt) ?? changedAt;
-        DateTimeOffset clamped = since < at ? since : at;
-        return tracking with { Shown = new SessionEventState(status, status == SessionStatus.None ? null : clamped, tracking.Main.TurnStarted) };
+        DateTimeOffset? since = status == tracking.Shown.Status ? tracking.Shown.Since : changedAt;
+        return tracking with { Shown = new SessionEventState(status, status == SessionStatus.None ? null : since, tracking.Main.TurnStarted) };
     }
 
     private static SessionStatus ShownStatus(Tracking tracking, DateTimeOffset at) =>

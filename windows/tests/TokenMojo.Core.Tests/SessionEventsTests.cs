@@ -758,23 +758,128 @@ public class SessionEventsTests
     }
 
     [Fact]
-    public void Reduce_SinceIsNeverAfterNow_WhenNowIsEarlierThanTheLastEvent()
+    public void Reduce_FutureDatedEvent_KeepsItsOwnTimeAsSince()
     {
         // Act
         SessionEventState state = ReduceAt(150, [Line(200, "UserPromptSubmit")]);
 
         // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Working, At(150), At(200)), state);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(200), At(200)), state);
     }
 
     [Fact]
-    public void Reduce_EventsOutOfOrder_NeverLeaveSinceAfterTheEventThatKeptTheStatus()
+    public void Reduce_SameLinesAtDifferentNows_KeepTheSameSinceWhileNothingChanges()
+    {
+        // Arrange
+        string[] lines = [Line(200, "UserPromptSubmit"), Line(210, "Stop")];
+
+        // Act
+        SessionEventState early = ReduceAt(100, lines);
+        SessionEventState later = ReduceAt(150, lines);
+        SessionEventState muchLater = ReduceAt(5000, lines);
+
+        // Assert
+        Assert.Equal(At(210), early.Since);
+        Assert.Equal(early, later);
+        Assert.Equal(early, muchLater);
+    }
+
+    [Fact]
+    public void Reduce_NowEarlierThanTheLastEvent_DoesNotBringBackAnExpiredSubagent()
+    {
+        // Arrange: the subagent expired by the last line, so an earlier now must not make it live again
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"), Line(2000, "Mystery"),
+        ];
+
+        // Act
+        SessionEventState behind = ReduceAt(150, lines);
+        SessionEventState ahead = ReduceAt(3000, lines);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(710), At(100)), ahead);
+        Assert.Equal(ahead, behind);
+    }
+
+    [Fact]
+    public void Reduce_EventsOutOfOrder_KeepTheSinceOfTheStatusThatWasEntered()
     {
         // Act
         SessionEventState state = ReduceAt(300, [Line(200, "SessionStart"), Line(150, "Stop")]);
 
         // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(150), null), state);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(200), null), state);
+    }
+
+    [Fact]
+    public void Reduce_ExpirySince_IsNeverAfterTheTimeComputedFor()
+    {
+        // Act
+        SessionEventState state = ReduceAt(700,
+            [Line(100, "UserPromptSubmit"), Line(700, "SubagentStart", agent: "sub-1"), Line(710, "Stop")]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), state);
+    }
+
+    [Fact]
+    public void Reduce_OtherNotificationFromASubagent_DoesNotTakeOverAMainAgentPrompt()
+    {
+        // Arrange
+        string[] lines =
+        [
+            Line(100, "PreToolUse"), Line(110, "Notification", notification: Permission),
+            Line(120, "Notification", notification: "idle_prompt", agent: "sub-1"),
+        ];
+
+        // Act
+        SessionEventState waiting = ReduceAt(125, lines);
+        SessionEventState cleared = ReduceAt(135, [.. lines, Line(130, "PostToolUse")]);
+
+        // Assert
+        Assert.Equal(SessionStatus.NeedsInput, waiting.Status);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(130), At(100), 1), cleared);
+    }
+
+    [Fact]
+    public void Reduce_OtherNotificationFromTheMainAgent_DoesNotTakeOverASubagentPrompt()
+    {
+        // Arrange
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "Notification", notification: Permission, agent: "sub-1"),
+            Line(120, "Notification", notification: "idle_prompt"),
+        ];
+
+        // Act
+        SessionEventState mainTool = ReduceAt(135, [.. lines, Line(130, "PostToolUse")]);
+        SessionEventState subagentTool = ReduceAt(145, [.. lines, Line(130, "PostToolUse"), Line(140, "PostToolUse", agent: "sub-1")]);
+
+        // Assert
+        Assert.Equal(SessionStatus.NeedsInput, mainTool.Status);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(140), At(100), 1), subagentTool);
+    }
+
+    [Fact]
+    public void Reduce_ReleasingAPromptThatOpenedTheLog_GoesToWorkingNotToNoStatus()
+    {
+        // Act
+        SessionEventState state = ReduceAt(130,
+            [Line(110, "Notification", notification: Permission, agent: "sub-1"), Line(120, "PostToolUse", agent: "sub-1")]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(120), At(110), 1), state);
+    }
+
+    [Fact]
+    public void Reduce_ExpiryOfAPromptThatOpenedTheLog_GoesToWorking()
+    {
+        // Act
+        SessionEventState state = ReduceAt(900, [Line(110, "Notification", notification: Permission, agent: "sub-1")]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(900), At(110)), state);
     }
 
     // Far after every event, so a subagent that never stopped has expired.
