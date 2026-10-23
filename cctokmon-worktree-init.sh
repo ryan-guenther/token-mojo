@@ -20,6 +20,12 @@ fi
 
 exec >&2
 
+# winget installs jq into its links dir, which a Claude Code started before the install
+# does not have on PATH yet
+if ! command -v jq >/dev/null 2>&1 && [[ -n "${LOCALAPPDATA:-}" ]] && command -v cygpath >/dev/null 2>&1; then
+    PATH="$PATH:$(cygpath -u "$LOCALAPPDATA")/Microsoft/WinGet/Links"
+fi
+
 command -v jq >/dev/null 2>&1 || exit 0
 command -v git >/dev/null 2>&1 || exit 0
 

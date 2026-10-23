@@ -342,8 +342,10 @@ read_bridge_state() {
 
     local -a a
     mapfile -t a <<< "$values"
-    # A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR
-    a=("${a[@]%$'\r'}")
+    # A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR.
+    # The CR goes through a variable: inside "${a[@]%...}" a $'\r' is not expanded and matches nothing.
+    local cr=$'\r'
+    a=("${a[@]%"$cr"}")
     [[ ${#a[@]} -lt 19 ]] && return 1
 
     MODEL_NAME="${a[0]}"
@@ -389,7 +391,8 @@ read_polling_state() {
 
     local -a da
     mapfile -t da <<< "$daily_vals"
-    da=("${da[@]%$'\r'}")
+    local cr=$'\r'
+    da=("${da[@]%"$cr"}")
     DAILY_MESSAGES="${da[0]:-0}"
     DAILY_SESSIONS="${da[1]:-0}"
     DAILY_TOOL_CALLS="${da[2]:-0}"

@@ -19,6 +19,12 @@ input=$(cat)
 # Atomically write to state file
 printf '%s\n' "$input" > "$TMP_FILE" && mv "$TMP_FILE" "$STATE_FILE"
 
+# winget installs jq into its links dir, which a Claude Code started before the install
+# does not have on PATH yet
+if ! command -v jq >/dev/null 2>&1 && [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+    PATH="$PATH:$(cygpath -u "$LOCALAPPDATA")/Microsoft/WinGet/Links"
+fi
+
 # Per-session copies let the menu bar app list every recent session
 SESSIONS_DIR="${CCTOKMON_SESSIONS_DIR:-$HOME/.claude/cctokmon-sessions}"
 if command -v jq >/dev/null 2>&1; then
