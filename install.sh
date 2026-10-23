@@ -10,6 +10,8 @@ CLAUDE_DIR="$HOME/.claude"
 CONFIG_DIR="$HOME/.config/cctokmon"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
+# Quoted inside the command string for the same reason as the hook command below. Earlier installs wrote it bare.
+STATUSLINE_COMMAND="\"$STATUSLINE_DEST\""
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
@@ -299,18 +301,26 @@ printf '\n%sConfigure Claude Code statusline bridge?%s\n' "${BOLD}" "${R}"
 printf 'This lets cctokmon receive real-time data from Claude Code.\n'
 printf 'It sets "statusLine" in ~/.claude/settings.json.\n\n'
 
-# Check if already configured
+# Check if already configured: ours (quoted, or bare as earlier installs wrote it) or someone else's
 if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     existing_sl=$(jq -r '.statusLine // empty' "$SETTINGS_FILE" 2>/dev/null || true)
+    existing_cmd=$(jq -r '(.statusLine | if type == "object" then .command else . end) // empty' "$SETTINGS_FILE" 2>/dev/null || true)
     # A native jq.exe under Git Bash ends its lines with CRLF
     existing_sl=${existing_sl%$'\r'}
-    if [[ -n "$existing_sl" ]]; then
+    existing_cmd=${existing_cmd%$'\r'}
+    if [[ "$existing_cmd" == "$STATUSLINE_COMMAND" ]]; then
+        ok "statusLine already configured in ${SETTINGS_FILE}"
+        configure_sl=0
+    elif [[ "$existing_cmd" == "$STATUSLINE_DEST" ]]; then
+        info "Updating the statusLine to the quoted form, so a path with spaces works."
+        configure_sl=1
+    elif [[ -n "$existing_sl" ]]; then
         warn "A statusLine is already configured: ${existing_sl}"
         printf '  Overwrite with cctokmon? [y/N] '
         read_answer
         if [[ "${ans,,}" != "y" ]]; then
             info "Skipped. To configure manually:"
-            info "  Set \"statusLine\": \"${STATUSLINE_DEST}\" in ~/.claude/settings.json"
+            info "  Set \"statusLine\": {\"type\": \"command\", \"command\": \"\\\"${STATUSLINE_DEST}\\\"\"} in ~/.claude/settings.json"
             configure_sl=0
         else
             configure_sl=1
@@ -335,7 +345,7 @@ if [[ "${configure_sl:-0}" -eq 1 ]]; then
     fi
 
     # shellcheck disable=SC2016 # the single-quoted argument is a jq program
-    write_settings --arg sl "$STATUSLINE_DEST" '.statusLine = {"type": "command", "command": $sl}' ||
+    write_settings --arg sl "$STATUSLINE_COMMAND" '.statusLine = {"type": "command", "command": $sl}' ||
         { err "Cannot update ${SETTINGS_FILE}; it was left unchanged."; exit 1; }
     ok "statusLine set in ${SETTINGS_FILE}"
 fi

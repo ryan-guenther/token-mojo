@@ -147,7 +147,7 @@ Press `Ctrl+C` to exit cleanly.
 
 ### Bridge mode (recommended)
 
-The installer configures `cctokmon-statusline.sh` as your Claude Code statusline script by setting `statusLine` in `~/.claude/settings.json`. Claude Code calls this script on every interaction, passing a JSON payload via stdin. The script writes it atomically to `~/.claude/cctokmon-state.json`. cctokmon reads that file every `REFRESH_INTERVAL` seconds.
+The installer configures `cctokmon-statusline.sh` as your Claude Code statusline script by setting `statusLine` in `~/.claude/settings.json`. Claude Code calls this script on every interaction, passing a JSON payload via stdin. The script writes it atomically to `~/.claude/cctokmon-state.json`. cctokmon reads that file every `REFRESH_INTERVAL` seconds. The script's path is quoted inside the `command` string, so a home folder with spaces works. Re-running the installer rewrites an older unquoted entry to the quoted form without asking, and leaves a quoted one as it is.
 
 Data displayed in bridge mode:
 - Session cost (exact, from billing engine)
