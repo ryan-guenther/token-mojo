@@ -3,15 +3,12 @@
 #
 # Claude Code pipes a JSON payload to this script's stdin on every interaction.
 # We write it atomically to a shared state file for cctokmon.sh to read.
+# Uses only bash 3.2 syntax, so it keeps working under stock macOS bash.
 #
-# Install: set "statusLine": "/path/to/cctokmon-statusline.sh" in ~/.claude/settings.json
+# Install: set "statusLine" in ~/.claude/settings.json to
+#   {"type": "command", "command": "\"/path/to/cctokmon-statusline.sh\""}
+# (the path is quoted inside the string, so a folder with spaces works)
 # (Run: cctokmon --setup  to configure this automatically)
-
-# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
-if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
-    printf 'cctokmon: bash 4+ required'
-    exit 0
-fi
 
 STATE_FILE="${CCTOKMON_STATE_FILE:-$HOME/.claude/cctokmon-state.json}"
 TMP_FILE="${STATE_FILE}.tmp"
