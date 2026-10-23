@@ -31,11 +31,17 @@ internal static class WslProcess
         try
         {
             using Process process = Process.Start(startInfo)!;
+            Stopwatch clock = Stopwatch.StartNew();
             Task<string> output = process.StandardOutput.ReadToEndAsync();
-            if (input is not null) WriteInput(process, input);
-            if (!process.WaitForExit(Timeout))
+            // Its own task, so a command that never reads its input cannot hold the call past the deadline.
+            Task writing = input is null ? Task.CompletedTask : Task.Run(() => WriteInput(process, input));
+            // One deadline for the whole call: the process, the input and the output.
+            bool answered = process.WaitForExit(Timeout)
+                && writing.Wait(Remaining(clock))
+                && output.Wait(Remaining(clock));
+            if (!answered)
             {
-                process.Kill(entireProcessTree: true);
+                Kill(process);
                 Trace.TraceWarning("TokenMojo: wsl.exe did not answer within {0}", Timeout);
                 return null;
             }
@@ -48,15 +54,39 @@ internal static class WslProcess
         }
     }
 
+    private static TimeSpan Remaining(Stopwatch clock) => Timeout > clock.Elapsed ? Timeout - clock.Elapsed : TimeSpan.Zero;
+
+    // Closing the input always sends EOF, so a failed write does not leave the command waiting for more.
     private static void WriteInput(Process process, byte[] input)
     {
         try
         {
             process.StandardInput.BaseStream.Write(input);
-            process.StandardInput.Close();
         }
-        // The command exited without reading it all; its exit code says whether that mattered.
-        catch (IOException)
+        // The command exited without reading it all, or was killed; its exit code says whether that mattered.
+        catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+        finally
+        {
+            try
+            {
+                process.StandardInput.Close();
+            }
+            catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException)
+            {
+            }
+        }
+    }
+
+    private static void Kill(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        // It ended on its own between the deadline and the kill.
+        catch (InvalidOperationException)
         {
         }
     }
