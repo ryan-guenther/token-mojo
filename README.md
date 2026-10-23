@@ -103,6 +103,7 @@ The installer will:
 5. Optionally configure the statusline bridge in `~/.claude/settings.json`
 6. Link `tm` to `~/.local/bin/tm` (a launcher on Windows; an existing `tm` that is not cctokmon's is left alone), see [Starting sessions with tm](#starting-sessions-with-tm)
 7. Copy the session status hook to `~/.claude/cctokmon-hook.sh` and optionally register it in `~/.claude/settings.json` (used by the TokenMojo Windows app, see [Session status](#session-status))
+8. Copy the worktree submodule hook to `~/.claude/cctokmon-worktree-init.sh` and register it with the same prompt, see [Worktrees and submodules](#worktrees-and-submodules)
 
 If `~/.local/bin` is not in your PATH, add this to your `~/.bashrc` or `~/.zshrc`:
 ```bash
@@ -224,6 +225,16 @@ tm -- -starts-with-a-dash            # everything after -- is the prompt
 
 `--wt NAME` accepts letters, digits, `.`, `_` and `-`. `tm` sets `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, since Claude Code would otherwise rewrite the tab title; the cost is that Claude's own title updates and terminal status reports are off in that session.
 
+### Worktrees and submodules
+
+`tm --wt NAME` runs Claude Code with `claude -w NAME`, which creates `<repo>/.claude/worktrees/NAME` on a branch called `worktree-NAME`, branched from the main checkout's current commit. Git leaves a new worktree's submodules empty, so the installer also offers a second hook, `cctokmon-worktree-init.sh`. It runs only when a session starts (`SessionStart`, matcher `startup`) in a folder under `.claude/worktrees/` that has a `.gitmodules` file and uninitialised submodules, and runs `git submodule update --init --recursive` there. It is registered with a 600 second timeout, since a clone can take minutes, and kept apart from `cctokmon-hook.sh`, which must stay a fast append. It prints only to stderr and always exits 0, and it never waits on a prompt (git's, the credential manager's, or ssh's host key and password questions, with any ssh command you configured kept), so a submodule that needs credentials it cannot get fails with a message rather than hanging.
+
+Worktrees show up as untracked files in the main checkout. To keep them out of every repository's `git status`, add them to your global ignore file once (git reads `~/.config/git/ignore` when `core.excludesFile` is not set):
+
+```bash
+mkdir -p ~/.config/git && echo '.claude/worktrees/' >> ~/.config/git/ignore
+```
+
 ### Session status
 
 `cctokmon-hook.sh` is a separate Claude Code hook that logs what each session is doing, one line per event, in `~/.claude/cctokmon-sessions/<session_id>.events` (event name and time only, never your prompts or tool input). TokenMojo reads the end of that log to get the status. The installer offers to register it for eight events, adding an entry beside any hooks you already have:
@@ -304,6 +315,7 @@ Windows hides new tray icons under the **^** arrow beside the clock at first; dr
 - **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours. In that list the highlighted row is the current session, and the dot shows its [status](#session-status): red needs input, teal ready for your next prompt, green working, grey ended. Sessions that never reported a status show green if active in the last 10 minutes and grey otherwise. Sessions needing you are listed first.
 - **Click a session row** to bring its terminal window forward. If there is no window, an ended session is resumed in a new Windows Terminal window, and one that still looks like it is running asks first ("Resume in a new terminal anyway?"). **Right-click** a row for Focus, Resume in new terminal, Open folder (in Explorer, through the WSL share) and Copy session ID; items that do not apply are greyed out. After a focus or resume the flyout closes.
 - **Alerts** appear as a notification when a session needs input, and when a turn that took `longTurnSeconds` or more finishes (30 by default, see [Settings](#settings)). While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts. A notification is skipped when that session's window is already in front, and clicking one brings the session's window forward (or offers to resume it).
+- **New Session…** (the right-click menu, the dashboard menu, or the **+** in the Sessions header) opens the [launcher](#starting-a-session-from-tokenmojo).
 - **Pop Out Window** opens the same dashboard in a window that stays on top; closing it remembers where it was.
 - **Launch at Login** (in the dashboard or the right-click menu) starts it automatically. **Quit** is in both too.
 
@@ -316,17 +328,41 @@ Limits of click-to-focus and resume:
 - Resume runs as the Linux user whose home folder holds the session's files, so the home folder name is used as the user name. `tm` must be installed there (`install.sh` in that distro); otherwise resume says so.
 - If the session's folder (for example a removed worktree) no longer exists, resume starts in the repository root, or in your home folder when that is gone too.
 
+### Starting a session from TokenMojo
+
+**New Session…** opens a small window that starts Claude Code in a new Windows Terminal window running [`tm`](#starting-sessions-with-tm), so the session is tagged and appears in the list like any other. It is for WSL only. Run `install.sh` in the distro first, and make sure `wt.exe` (Windows Terminal) is installed.
+
+- **Prompt** is sent to Claude unchanged, quotes, semicolons, `$` and line breaks included. Enter starts the session; Shift+Enter adds a line. Leave it empty to start an idle session. The prompt travels in a temporary file (`~/.claude/cctokmon-launch/<id>.txt`) that `tm` reads and deletes before anything else can stop it (a file it cannot delete is only a warning); if the terminal cannot be started, the launcher deletes the file itself, and `tm` removes any launch file older than a day on each run.
+- **Folder** is where the session starts. Pick from the list or type a path (`~`, `~/my-app` or `/srv/code`; double quotes and backslashes are not accepted). The list holds `defaultFolder`, then the folders of recent sessions (a worktree is listed as its repository), then the git repositories found directly under each of `repoRoots`. **Browse…** opens a folder dialog at your distro home; only folders inside the distro can be used.
+- **Worktree** starts the session in `claude -w NAME`, as described under [Worktrees and submodules](#worktrees-and-submodules). Names take letters, digits, `.`, `_` and `-`.
+- **Links in the prompt** pre-fill the folder and worktree, using the first link found. A Linear issue link (`https://linear.app/<workspace>/issue/ENG-42/...`) suggests the worktree `eng-42` and the folder mapped to `ENG` in `linearTeams`. A GitHub pull request link (`https://github.com/octo/widgets/pull/12`) suggests the worktree `pr-12` and the repository whose `origin` remote is `octo/widgets` (https or ssh, with or without `.git`). The worktree box is ticked only when the folder was found too; with a link but no matching folder the name is suggested and the box left unticked. The line under the prompt says what was detected. Anything you set yourself is left alone, and the prompt itself is never changed.
+- **WSL distro** appears only when more than one distro is running.
+
+Limits: the user whose home folder is used is the one that has a `~/.claude` in the distro, with the home folder name taken as the user name, as for resume. Repositories are listed one level below each root only, and not when `.git` is a file (a worktree or submodule). A repository that cannot be read is skipped. The **+** button is in the Sessions card, which shows once at least one session has been seen; the menu entries are always there.
+
 ### Settings
 
-`%APPDATA%\TokenMojo\settings.json` is created on first run:
+`%APPDATA%\TokenMojo\settings.json` is created on first run with every setting at its default:
 
 ```json
 {
-  "longTurnSeconds": 30
+  "longTurnSeconds": 30,
+  "distro": null,
+  "defaultFolder": "~",
+  "repoRoots": ["~"],
+  "linearTeams": {}
 }
 ```
 
-`longTurnSeconds` is how long a turn must take before finishing it raises an alert. The file is read on every refresh. If it is not valid JSON or has a bad value, the dashboard shows the error instead of falling back to defaults.
+| Setting | Meaning |
+|---|---|
+| `longTurnSeconds` | How long a turn must take before finishing it raises an alert. |
+| `distro` | The WSL distro the launcher uses. `null` uses the first running one; a distro that is not running is ignored. |
+| `defaultFolder` | The launcher's first folder. `~`, `~/...` or an absolute path. |
+| `repoRoots` | Folders whose git repositories the launcher offers, same form as `defaultFolder`. |
+| `linearTeams` | Linear team key to the folder its issues are worked in, for example `{"ENG": "~/my-app"}`. Keys are upper case letters and digits, starting with a letter. |
+
+The file is read on every refresh. If it is not valid JSON or has a bad value, the dashboard shows the error instead of falling back to defaults.
 
 ### Troubleshooting
 
@@ -341,7 +377,7 @@ Limits of click-to-focus and resume:
 bash uninstall.sh
 ```
 
-Removes the symlinks (or Windows launchers) at `~/.local/bin/cctokmon` and `~/.local/bin/tm` (a `tm` that is not cctokmon's is kept), the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook script at `~/.claude/cctokmon-hook.sh`, and the `statusLine` entry and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
+Removes the symlinks (or Windows launchers) at `~/.local/bin/cctokmon` and `~/.local/bin/tm` (a `tm` that is not cctokmon's is kept), the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook scripts at `~/.claude/cctokmon-hook.sh` and `~/.claude/cctokmon-worktree-init.sh`, and the `statusLine` entry and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
 
 On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position) and `%APPDATA%\TokenMojo` (settings).
 

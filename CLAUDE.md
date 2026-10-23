@@ -16,6 +16,7 @@ TokenMojo is the GUI on top of the same bridge files: a macOS menu bar app (`men
 cctokmon.sh              # Main monitor — entry point
 cctokmon-statusline.sh   # Companion statusline script (called by Claude Code on every interaction)
 cctokmon-hook.sh         # Claude Code hook (called on session events) that appends each session's events to a log
+cctokmon-worktree-init.sh  # SessionStart hook: initialises submodules in a new `.claude/worktrees/` worktree
 cctokmon-tm.sh           # `tm`: starts or resumes Claude Code in the current tab and tags the tab title for TokenMojo
 install.sh               # Installer: deps check, symlink, statusline and hook config
 uninstall.sh             # Clean removal
@@ -29,7 +30,7 @@ windows/
   build.sh               # tests, then dotnet publish → %LOCALAPPDATA%\Programs\TokenMojo\TokenMojo.exe
   TokenMojo.Windows.slnx
   src/TokenMojo.Core/    # net10.0, no UI: bridge parsing, display rules, session loading, source discovery
-  src/TokenMojo/         # net10.0-windows WPF tray app: icon, flyout, pop-out, Launch at Login
+  src/TokenMojo/         # net10.0-windows WPF tray app: icon, flyout, pop-out, launcher, Launch at Login
   tests/TokenMojo.Core.Tests/  # xUnit tests for Core (run on any OS)
 ```
 
@@ -86,6 +87,13 @@ bash windows/build.sh [target-dir]
 - Optionally sets `statusLine` in `~/.claude/settings.json` via `jq`. The correct format is an object: `{"type": "command", "command": "/path/to/script"}` — not a plain string (Claude Code's `/doctor` will flag a plain string as invalid).
 - Links `cctokmon-tm.sh` as `~/.local/bin/tm` the same way (a launcher marked `# tm launcher` under Git Bash). A `tm` it did not write is left alone, and `uninstall.sh` removes only ours.
 - Copies `cctokmon-hook.sh` to `~/.claude/` and, prompting once, appends `{"hooks":[{"type":"command","command":"<dest>"}]}` to each of `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `Stop` and `SessionEnd` in `settings.json`. Idempotent, and other hooks are left alone. `uninstall.sh` removes only entries whose command is ours.
+- Copies `cctokmon-worktree-init.sh` the same way and registers it, in the same prompt and idempotently, for `SessionStart` only, as `{"matcher":"startup","hooks":[{"type":"command","command":"<dest>","timeout":600}]}`. An install that already has the eight status hooks is still offered it. `uninstall.sh` removes both commands from `settings.json` before it removes either script.
+
+### Worktree submodule hook (`cctokmon-worktree-init.sh`)
+
+- A separate script, never part of `cctokmon-hook.sh`, which must stay a fast append: a submodule clone can take minutes, hence the 600 second timeout.
+- It acts only when the payload's `cwd` contains `/.claude/worktrees/`, `.gitmodules` exists there, and `git submodule status` lists an uninitialised (`-`) entry; then it runs `git submodule update --init --recursive` with stdin from `/dev/null`, `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never` and `GIT_SSH_COMMAND` set to the configured ssh command (`GIT_SSH_COMMAND`, else `core.sshCommand`, else `ssh`) plus `-o BatchMode=yes`, so nothing can wait for an answer. Windows-style `cwd` backslashes are turned into slashes first.
+- Like the status hook it must never write to stdout (`SessionStart` stdout is added to Claude's context): `exec >&2` at the top. It always exits 0.
 
 ### Session status hook (`cctokmon-hook.sh`)
 
@@ -107,7 +115,7 @@ bash windows/build.sh [target-dir]
 
 - `tm [--wt NAME] [--prompt-file PATH] [--] [prompt...]` generates a session id, prints the OSC 0 title `TM <name> <id8>` (id8 is the first 8 characters of the id; name is `--wt` or the folder), then `exec`s `claude --session-id <id> -n <name> [-w NAME] [-- prompt]`. `tm --resume <id>` tags the tab the same way and runs `claude --resume <id>`.
 - It exports `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, because Claude Code otherwise rewrites the title; this also turns off Claude's own title updates and terminal status reports in that session.
-- `--prompt-file` reads the prompt, deletes the file, and fails if it is missing. Bad arguments (unknown flag, missing value, a worktree name outside `[A-Za-z0-9._-]`) print usage to stderr and exit 2.
+- `--prompt-file` reads the prompt and deletes the file after argument validation and before any check that can exit (including the `claude` lookup); a failed delete is a warning, and a missing file is an error. Each run also deletes `~/.claude/cctokmon-launch/*.txt` older than a day. Bad arguments (unknown flag, missing value, a worktree name outside `[A-Za-z0-9._-]`) print usage to stderr and exit 2.
 - Resuming does not depend on the folder: `claude --resume <id>` finds the session from the repository root, or any folder, after its worktree was removed (it continues without the worktree).
 
 ### Windows tray app (`windows/`)
@@ -118,6 +126,8 @@ bash windows/build.sh [target-dir]
 - Session status differs from the Mac app: the Windows app reads the hook's `.events` log (`SessionEvents`, `StatusAlerts`), so a row is needs input / ready / working / ended. Only a session with no events file falls back to the Mac app's 10-minute "active" rule. The list orders needs input, ready, working, no status, ended, then newest first, before the 10-row cap.
 - Alerts: a balloon tip on entering needs input, and on any change into ready after a turn of at least `longTurnSeconds` (default 30) from `%APPDATA%\TokenMojo\settings.json`. The first load is a baseline and alerts nothing. An existing settings file that is invalid is shown in the flyout and defaults are not used; when the file is absent and cannot be created, defaults are used. The tray ring's centre shows the waiting count (needs input plus ready) in place of the percentage.
 - Click-to-focus and resume: `SessionWindows.Find` matches the `tm` tag's id8 as a whole token in the title of a Windows Terminal window (class `CASCADIA_HOSTING_WINDOW_CLASS`, whose title is the active tab's), `SessionActions.Decide` picks focus, confirm-resume, resume or unavailable, and `ResumeCommand` builds the `wt.exe` argument list (a list, so paths with spaces survive; `-u` the session's Linux user; the folder is `workspace.project_dir`, else `current_dir`, then the repository root when the worktree is gone, then `~`; `tm` is called as `~/.local/bin/tm`, unquoted, since a login shell may not have it on PATH; the session id must be a UUID). Anything that touches the WSL share runs under `Task.Run`, never on the UI thread. All of it is in Core; `SessionControl`, `TerminalWindows` and `Native` only execute it. Sources carry their `Distro`; a Windows-source session cannot be resumed. A balloon is skipped when the foreground window's title matches the session, and clicking one focuses (or resumes) the first session it lists.
+- Launcher (`LauncherWindow`, its own window because the flyout closes on deactivate): from the tray menu, the flyout menu and the "+" in the Sessions header; one window is reused. Core decides, WPF only executes. `LaunchHints.From` reads the first Linear issue or GitHub pull request URL (worktree `<team>-<n>` lowercase or `pr-<n>`; folder from `linearTeams`, or the scanned repo whose `origin` is `<owner>/<repo>`), `RepoScanner` lists repos one level under each `repoRoots` entry (a `.git` file is not a repo root; it never throws), `FolderList` orders default, recent folders, repos, and `LaunchCommand.Build` makes the `wt.exe` arguments through the same `TerminalCommand` base as `ResumeCommand`. A hint only fills fields the user has not chosen.
+- The launch command is `wt.exe -w new wsl.exe -d <distro> -u <user> --cd <folder> -- bash -lc "~/.local/bin/tm [--wt NAME] [--prompt-file ~/.claude/cctokmon-launch/<guid>.txt]"`. The shell string must never hold a `;` (wt.exe splits its command there; arguments are escaped, but this one has nothing to escape) or a quote. The prompt goes through a file written by `LaunchPrompt` (UTF-8, no BOM, LF) that `tm` deletes; `SessionLauncher` deletes it if the terminal fails to start. The folder passes to `--cd` as given (`~`, `~/x`, `/x`), validated by `LinuxFolder.IsValid`; the worktree name by `tm`'s own rule. The user is the one whose `~/.claude` is in the distro (`LaunchTargets.UserFor`). Settings fields `distro`, `defaultFolder`, `repoRoots`, `linearTeams` are validated on load like the rest of the file.
 - The current state is the most recently written `cctokmon-state.json` across sources (rate limits are per account). Sessions from every source are merged into one list, newest first.
 - Failures stay per source: a distro that stops or denies access mid-read is skipped, never allowed to blank the others or throw out of the timer tick. Bridge files are opened with `FileShare.Delete` so the bridge's `mv` can rename over a file TokenMojo is reading on Windows.
 - Tray icon: one ring for the worst gauge, drawn by the same `RingGauge.Draw` as the dashboard rings and wrapped as a PNG `.ico`; taskbar light/dark comes from `SystemUsesLightTheme`, app light/dark from `AppsUseLightTheme`.

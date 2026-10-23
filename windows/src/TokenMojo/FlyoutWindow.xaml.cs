@@ -17,9 +17,12 @@ public partial class FlyoutWindow : Window
         WindowChrome.Apply(this, round: true);
         Deactivated += (_, _) => HideFlyout();
         Dashboard.SessionActed += (_, _) => HideFlyout();
+        Dashboard.NewSessionRequested += (_, _) => RequestNewSession();
     }
 
     public event EventHandler? PopOutRequested;
+
+    public event EventHandler? NewSessionRequested;
 
     public DashboardView View => Dashboard;
 
@@ -64,6 +67,14 @@ public partial class FlyoutWindow : Window
     }
 
     private IntPtr Handle => new WindowInteropHelper(this).Handle;
+
+    private void OnNewSession(object sender, RoutedEventArgs e) => RequestNewSession();
+
+    private void RequestNewSession()
+    {
+        HideFlyout();
+        NewSessionRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     private void OnPopOut(object sender, RoutedEventArgs e)
     {

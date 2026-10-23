@@ -11,6 +11,8 @@ HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
 HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","PostToolUseFailure","Notification","Stop","SessionEnd"]'
+WORKTREE_INIT_DEST="$CLAUDE_DIR/cctokmon-worktree-init.sh"
+WORKTREE_INIT_COMMAND="\"$WORKTREE_INIT_DEST\""
 STATE_FILE="$CLAUDE_DIR/cctokmon-state.json"
 SESSIONS_DIR="$CLAUDE_DIR/cctokmon-sessions"
 
@@ -31,13 +33,15 @@ printf '\n%scctokmon uninstaller%s\n%s\n\n' "${BOLD}" "${R}" "──────
 # jq the entries cannot be checked, so the script stays too: they must never point at a missing file.
 keep_hook_script=0
 if [[ -f "$SETTINGS_FILE" ]] && ! command -v jq >/dev/null 2>&1; then
-    warn "jq not found, so ${SETTINGS_FILE} was not checked for cctokmon hooks; keeping ${HOOK_DEST}."
-    printf '  Remove its entries from %s by hand, then delete the script.\n' "$SETTINGS_FILE"
+    warn "jq not found, so ${SETTINGS_FILE} was not checked for cctokmon hooks; keeping ${HOOK_DEST} and ${WORKTREE_INIT_DEST}."
+    printf '  Remove their entries from %s by hand, then delete the scripts.\n' "$SETTINGS_FILE"
     keep_hook_script=1
 fi
 if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     jq_error=$(mktemp)
-    if ! has_hooks=$(jq -r --arg cmd "$HOOK_COMMAND" '[.hooks[]?[]?.hooks[]?.command] | index($cmd) != null' "$SETTINGS_FILE" 2>"$jq_error"); then
+    if ! has_hooks=$(jq -r --arg cmd "$HOOK_COMMAND" --arg init "$WORKTREE_INIT_COMMAND" '
+        [.hooks[]?[]?.hooks[]?.command] | (index($cmd) != null) or (index($init) != null)
+    ' "$SETTINGS_FILE" 2>"$jq_error"); then
         printf 'Cannot process %s, so nothing was removed:\n' "$SETTINGS_FILE" >&2
         cat "$jq_error" >&2
         rm -f "$jq_error"
@@ -47,12 +51,13 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     has_hooks=${has_hooks%$'\r'}
     if [[ "$has_hooks" == "true" ]]; then
         local_tmp=$(mktemp)
-        if ! jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
+        if ! jq --arg cmd "$HOOK_COMMAND" --arg init "$WORKTREE_INIT_COMMAND" --argjson events "$HOOK_EVENTS" '
+            def ours_cmd: . == $cmd or . == $init;
             reduce $events[] as $e (.;
                 if .hooks[$e] == null then .
                 else .hooks[$e] |= [.[]
-                    | (any(.hooks[]?; .command == $cmd)) as $ours
-                    | if $ours then .hooks |= map(select(.command != $cmd)) else . end
+                    | (any(.hooks[]?; .command | ours_cmd)) as $ours
+                    | if $ours then .hooks |= map(select(.command | ours_cmd | not)) else . end
                     | select(($ours | not) or (.hooks | length) > 0)]
                 end
                 | if .hooks[$e] == [] then del(.hooks[$e]) else . end)
@@ -97,6 +102,12 @@ fi
 if [[ -f "$HOOK_DEST" && "$keep_hook_script" -eq 0 ]]; then
     rm "$HOOK_DEST"
     ok "Removed: ${HOOK_DEST}"
+fi
+
+# Remove worktree submodule hook script
+if [[ -f "$WORKTREE_INIT_DEST" && "$keep_hook_script" -eq 0 ]]; then
+    rm "$WORKTREE_INIT_DEST"
+    ok "Removed: ${WORKTREE_INIT_DEST}"
 fi
 
 # Remove state file

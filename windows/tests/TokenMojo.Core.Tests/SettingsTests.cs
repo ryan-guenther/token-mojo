@@ -94,4 +94,79 @@ public sealed class SettingsTests : IDisposable
         Assert.Contains(path, error.Message);
         Assert.Equal(contents, File.ReadAllText(path));
     }
+
+    [Fact]
+    public void Load_NoFileYet_LaunchSettingsDefaultToHomeAndNoDistro()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "TokenMojo", "settings.json");
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Null(settings.Distro);
+        Assert.Equal("~", settings.DefaultFolder);
+        Assert.Equal(["~"], settings.RepoRoots);
+        Assert.Empty(settings.LinearTeams);
+    }
+
+    [Fact]
+    public void Load_FileWithLaunchSettings_UsesThem()
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", """
+            {"distro": "Debian", "defaultFolder": "~/my-app", "repoRoots": ["~", "/srv/code"], "linearTeams": {"ENG": "~/my-app", "OPS2": "/srv/ops"}}
+            """, DateTimeOffset.UtcNow);
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Equal("Debian", settings.Distro);
+        Assert.Equal("~/my-app", settings.DefaultFolder);
+        Assert.Equal(["~", "/srv/code"], settings.RepoRoots);
+        Assert.Equal("~/my-app", settings.LinearTeams["ENG"]);
+        Assert.Equal("/srv/ops", settings.LinearTeams["OPS2"]);
+    }
+
+    [Fact]
+    public void Load_FileWithOnlyOtherFields_KeepsLaunchDefaults()
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", """{"longTurnSeconds": 90}""", DateTimeOffset.UtcNow);
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Equal("~", settings.DefaultFolder);
+        Assert.Equal(["~"], settings.RepoRoots);
+    }
+
+    [Theory]
+    [InlineData("""{"defaultFolder": "my-app"}""")]
+    [InlineData("""{"defaultFolder": ""}""")]
+    [InlineData("""{"defaultFolder": "~other/x"}""")]
+    [InlineData("""{"defaultFolder": null}""")]
+    [InlineData("""{"repoRoots": ["~", "code"]}""")]
+    [InlineData("""{"repoRoots": null}""")]
+    [InlineData("""{"linearTeams": {"ENG": "my-app"}}""")]
+    [InlineData("""{"linearTeams": {"eng": "~/my-app"}}""")]
+    [InlineData("""{"linearTeams": {"1ENG": "~/my-app"}}""")]
+    [InlineData("""{"linearTeams": {"E-NG": "~/my-app"}}""")]
+    [InlineData("""{"linearTeams": {"": "~/my-app"}}""")]
+    [InlineData("""{"linearTeams": null}""")]
+    [InlineData("""{"distro": ""}""")]
+    public void Load_InvalidLaunchSettings_ThrowsNamingTheFile(string contents)
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", contents, DateTimeOffset.UtcNow);
+
+        // Act
+        SettingsException error = Assert.Throws<SettingsException>(() => Settings.Load(path));
+
+        // Assert
+        Assert.Contains(path, error.Message);
+    }
 }

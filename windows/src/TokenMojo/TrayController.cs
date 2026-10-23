@@ -28,7 +28,9 @@ internal sealed class TrayController : IDisposable
     private readonly Forms.ToolStripMenuItem _launchAtLogin = new("Launch at Login");
     private readonly DispatcherTimer _timer = new() { Interval = RefreshInterval };
     private readonly FlyoutWindow _flyout = new();
+    private readonly WslDistros _wsl = new();
     private PopOutWindow? _popOut;
+    private LauncherWindow? _launcher;
     private IReadOnlyList<ClaudeSource> _sources = [];
     private DateTimeOffset _lastDiscovery = DateTimeOffset.MinValue;
     private BridgeSnapshot? _latest;
@@ -38,12 +40,14 @@ internal sealed class TrayController : IDisposable
 
     public TrayController()
     {
-        _locator = new ClaudeDirLocator(_windowsHome, new WslDistros(), Environment.GetEnvironmentVariable);
+        _locator = new ClaudeDirLocator(_windowsHome, _wsl, Environment.GetEnvironmentVariable);
         _flyout.PopOutRequested += (_, _) => ShowPopOut();
+        _flyout.NewSessionRequested += (_, _) => ShowLauncher();
 
         _launchAtLogin.Click += (_, _) => StartupRegistration.Toggle();
         Forms.ContextMenuStrip menu = new();
         menu.Items.Add(new Forms.ToolStripMenuItem("Open Dashboard", null, (_, _) => _flyout.Toggle()) { Font = new System.Drawing.Font(menu.Font, System.Drawing.FontStyle.Bold) });
+        menu.Items.Add(new Forms.ToolStripMenuItem("New Session…", null, (_, _) => ShowLauncher()));
         menu.Items.Add(new Forms.ToolStripMenuItem("Pop Out Window", null, (_, _) => ShowPopOut()));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(_launchAtLogin);
@@ -175,9 +179,22 @@ internal sealed class TrayController : IDisposable
         if (_popOut is null)
         {
             _popOut = new PopOutWindow();
+            _popOut.View.NewSessionRequested += (_, _) => ShowLauncher();
             Render(_latest, DateTimeOffset.Now);
         }
         _popOut.ShowFront();
+    }
+
+    // One launcher at a time: asking again brings the open one forward.
+    private void ShowLauncher()
+    {
+        if (_launcher is null)
+        {
+            _launcher = new LauncherWindow(_settingsPath, _locator, _wsl);
+            _launcher.Closed += (_, _) => _launcher = null;
+            _launcher.Show();
+        }
+        _launcher.Bring();
     }
 
     private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
@@ -186,6 +203,7 @@ internal sealed class TrayController : IDisposable
         Theme.Apply(Application.Current.Resources);
         WindowChrome.Apply(_flyout, round: true);
         if (_popOut is not null) WindowChrome.Apply(_popOut, round: false);
+        if (_launcher is not null) WindowChrome.Apply(_launcher, round: false);
         Render(_latest, DateTimeOffset.Now);
     }
 
