@@ -103,6 +103,77 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadSessions_StatusFileBesideSession_AttachesStatusAndTimes()
+    {
+        // Arrange
+        ClaudeSource source = _temp.Source("win");
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        _temp.Write("win/cctokmon-sessions/a.status", """{"status":"needs_input","since":1792721250,"turn_started":1792721248}""", Now);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([source], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.NeedsInput, session.Status);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792721250), session.StatusSince);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792721248), session.TurnStarted);
+    }
+
+    [Fact]
+    public void LoadSessions_NoStatusFile_HasNoStatus()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.None, session.Status);
+        Assert.Null(session.StatusSince);
+        Assert.Null(session.TurnStarted);
+    }
+
+    [Fact]
+    public void LoadSessions_UndecodableStatusFile_HasNoStatusButKeepsTheSession()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        _temp.Write("win/cctokmon-sessions/a.status", "not json", Now);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.None, session.Status);
+    }
+
+    [Fact]
+    public void LoadSessions_UnreadableStatusFile_HasNoStatusButKeepsTheSession()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        string locked = _temp.Write("win/cctokmon-sessions/a.status", """{"status":"ready","since":1,"turn_started":null}""", Now);
+        using IDisposable denied = TempDir.DenyRead(locked);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.None, session.Status);
+    }
+
+    [Fact]
+    public void LoadSessions_StatusFileWithoutSessionFile_IsNotListed()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/orphan.status", """{"status":"ready","since":1,"turn_started":null}""", Now);
+
+        // Act / Assert
+        Assert.Empty(SessionStore.LoadSessions([_temp.Source("win")], Now));
+    }
+
+    [Fact]
     public void LoadCurrent_StateFilesInTwoSources_PicksMostRecentlyWritten()
     {
         // Arrange

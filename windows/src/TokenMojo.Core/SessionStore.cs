@@ -2,7 +2,9 @@ using System.Text.Json;
 
 namespace TokenMojo.Core;
 
-public sealed record SessionSnapshot(string Id, BridgeState State, DateTimeOffset Updated)
+public sealed record SessionSnapshot(
+    string Id, BridgeState State, DateTimeOffset Updated,
+    SessionStatus Status = SessionStatus.None, DateTimeOffset? StatusSince = null, DateTimeOffset? TurnStarted = null)
 {
     public bool IsActive(DateTimeOffset now) => now - Updated < TimeSpan.FromMinutes(10);
 }
@@ -50,8 +52,11 @@ public static class SessionStore
             {
                 DateTimeOffset updated = new(file.LastWriteTimeUtc);
                 if (updated <= cutoff) continue;
-                if (TryRead(file) is { } state)
-                    sessions.Add(new SessionSnapshot(Path.GetFileNameWithoutExtension(file.Name), state, updated));
+                if (TryRead(file) is not { } state) continue;
+                SessionStatusFile? status = TryReadStatus(file);
+                sessions.Add(new SessionSnapshot(
+                    Path.GetFileNameWithoutExtension(file.Name), state, updated,
+                    status?.Status ?? SessionStatus.None, status?.Since, status?.TurnStarted));
             }
         }
         // One unreadable source (a WSL distro that stopped mid-read) must not hide the others.
@@ -70,6 +75,19 @@ public static class SessionStore
         }
         // Writes are atomic renames, so an undecodable file is foreign; one that vanished or is locked
         // is caught mid-replace and is read again on the next refresh.
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    // The hook script writes <id>.status beside <id>.json; a session without hooks, or with a bad file, has no status.
+    private static SessionStatusFile? TryReadStatus(FileInfo sessionFile)
+    {
+        try
+        {
+            return SessionStatusFile.Parse(ReadShared(Path.ChangeExtension(sessionFile.FullName, ".status")));
+        }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
             return null;
