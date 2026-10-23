@@ -1,14 +1,29 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace TokenMojo.Core;
 
 public sealed class SettingsException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>User settings in %APPDATA%\TokenMojo\settings.json. A file that cannot be read is an error, never silently replaced by defaults.</summary>
-public sealed record Settings(int LongTurnSeconds = 30)
+public sealed record Settings
 {
     private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+    private static readonly Regex TeamKey = new(@"\A[A-Z][A-Z0-9]*\z");
+
+    public int LongTurnSeconds { get; init; } = 30;
+
+    /// <summary>The WSL distro the launcher uses; null is the first running one.</summary>
+    public string? Distro { get; init; }
+
+    public string DefaultFolder { get; init; } = LinuxFolder.Home;
+
+    /// <summary>Folders whose subfolders the launcher offers when they are git repositories.</summary>
+    public IReadOnlyList<string> RepoRoots { get; init; } = [LinuxFolder.Home];
+
+    /// <summary>Linear team key to the folder its issues are worked in.</summary>
+    public IReadOnlyDictionary<string, string> LinearTeams { get; init; } = new Dictionary<string, string>();
 
     public TimeSpan LongTurn => TimeSpan.FromSeconds(LongTurnSeconds);
 
@@ -19,13 +34,35 @@ public sealed record Settings(int LongTurnSeconds = 30)
             if (!File.Exists(path)) return CreateDefault(path);
             Settings settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path), Options)
                 ?? throw new JsonException("The file is JSON null");
-            if (settings.LongTurnSeconds < 0) throw new JsonException("longTurnSeconds must not be negative");
+            settings.Validate();
             return settings;
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
             throw new SettingsException($"Cannot read settings file {path}: {e.Message}", e);
         }
+    }
+
+    // JSON null can reach the non-nullable fields, so they are checked rather than trusted.
+    private void Validate()
+    {
+        if (LongTurnSeconds < 0) throw new JsonException("longTurnSeconds must not be negative");
+        if (Distro is "") throw new JsonException("distro must not be empty; leave it out to use the first running distro");
+        RequireFolder("defaultFolder", DefaultFolder);
+        if (RepoRoots is null) throw new JsonException("repoRoots must be a list");
+        foreach (string root in RepoRoots) RequireFolder("repoRoots", root);
+        if (LinearTeams is null) throw new JsonException("linearTeams must be an object");
+        foreach ((string team, string folder) in LinearTeams)
+        {
+            if (!TeamKey.IsMatch(team)) throw new JsonException($"linearTeams key '{team}' must be a team key such as ENG");
+            RequireFolder($"linearTeams.{team}", folder);
+        }
+    }
+
+    private static void RequireFolder(string field, string? folder)
+    {
+        if (!LinuxFolder.IsValid(folder))
+            throw new JsonException($"{field} must be a folder starting with ~/ or /, or just ~, not '{folder}'");
     }
 
     // A folder that cannot be written is no reason to stop reading Claude's files: run on the defaults.
