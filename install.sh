@@ -240,8 +240,8 @@ else
     ok "Config exists:  ${CONFIG_DIR}/config  (not overwritten)"
 fi
 
-# Bin dir
-mkdir -p "$BIN_DIR"
+# Bin dir, and the Claude dir that the scripts below are copied into (absent until Claude Code first runs)
+mkdir -p "$BIN_DIR" "$CLAUDE_DIR"
 
 # Symlink main script
 chmod +x "${SCRIPT_DIR}/cctokmon.sh"

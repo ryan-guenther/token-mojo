@@ -101,7 +101,7 @@ The installer will:
 1. Check all dependencies and offer to install any that are missing via your system package manager (apt / dnf / brew / winget)
 2. Copy your config to `~/.config/cctokmon/config`
 3. Symlink `cctokmon` to `~/.local/bin/cctokmon` (on Windows, a small launcher script, since Git Bash cannot reliably symlink)
-4. Copy the statusline companion script to `~/.claude/cctokmon-statusline.sh`
+4. Copy the statusline companion script to `~/.claude/cctokmon-statusline.sh` (creating `~/.claude` if Claude Code has not yet)
 5. Optionally configure the statusline bridge in `~/.claude/settings.json`
 6. Link `tm` to `~/.local/bin/tm` (a launcher on Windows; an existing `tm` that is not cctokmon's is left alone), see [Starting sessions with tm](#starting-sessions-with-tm)
 7. Copy the session status hook to `~/.claude/cctokmon-hook.sh` and optionally register it in `~/.claude/settings.json` (used by the TokenMojo Windows app, see [Session status](#session-status))
