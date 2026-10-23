@@ -49,17 +49,17 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
-    public void Load_DefaultFileCannotBeCreated_ThrowsNamingTheFile()
+    public void Load_DefaultFileCannotBeCreated_UsesDefaults()
     {
         // Arrange
         string blocker = _temp.Write("TokenMojo", "a file where the folder should be", DateTimeOffset.UtcNow);
         string path = Path.Combine(blocker, "settings.json");
 
         // Act
-        SettingsException error = Assert.Throws<SettingsException>(() => Settings.Load(path));
+        Settings settings = Settings.Load(path);
 
         // Assert
-        Assert.Contains(path, error.Message);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.LongTurn);
     }
 
     [Fact]

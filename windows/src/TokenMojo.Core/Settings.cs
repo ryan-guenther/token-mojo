@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace TokenMojo.Core;
@@ -27,11 +28,19 @@ public sealed record Settings(int LongTurnSeconds = 30)
         }
     }
 
+    // A folder that cannot be written is no reason to stop reading Claude's files: run on the defaults.
     private static Settings CreateDefault(string path)
     {
         Settings defaults = new();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(defaults, Options));
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(defaults, Options));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning("TokenMojo: cannot create settings file {0}, using defaults: {1}", path, e.Message);
+        }
         return defaults;
     }
 }
