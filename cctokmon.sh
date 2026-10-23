@@ -2,6 +2,13 @@
 # cctokmon v0.1.0 — Claude Code Token Monitor
 # Live token usage, cost, and context window data for Claude Code sessions.
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'cctokmon: bash 4.0+ required, found %s.\n' "${BASH_VERSION:-unknown}" >&2
+    printf 'macOS ships bash 3.2. Install a current one (brew install bash) and run this script with it.\n' >&2
+    exit 1
+fi
+
 set -uo pipefail
 
 readonly VERSION="0.1.0"
@@ -651,11 +658,7 @@ cmd_check() {
     printf '%s\n' "────────────────────────────────"
 
     # Bash version
-    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
-        printf '%b Bash %s\n' "$ok" "$BASH_VERSION"
-    else
-        printf '%b Bash %s — need 4.0+\n' "$fail" "$BASH_VERSION"
-    fi
+    printf '%b Bash %s\n' "$ok" "$BASH_VERSION"
 
     # jq
     if command -v jq >/dev/null 2>&1; then
@@ -806,11 +809,6 @@ load_config() {
 }
 
 check_deps() {
-    if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-        printf 'cctokmon requires Bash 4.0+. You have %s.\n' "$BASH_VERSION" >&2
-        printf 'macOS users: brew install bash\n' >&2
-        exit 1
-    fi
     if ! command -v jq >/dev/null 2>&1; then
         printf 'cctokmon requires jq.\n  Ubuntu/Debian: apt install jq\n  macOS: brew install jq\n' >&2
         exit 1

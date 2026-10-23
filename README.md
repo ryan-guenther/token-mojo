@@ -67,7 +67,7 @@ cctokmon avoids this by hooking into Claude Code's **statusline API** — a feat
 ```bash
 brew install bash
 ```
-Under Bash 3 the scripts say so instead of failing quietly. `install.sh`, `uninstall.sh` and `tm` print an error and exit with status 1. The hook scripts print one line to stderr, log nothing and exit 0, so a session is never interrupted. The statusline script needs only Bash 3.2, so it keeps working under the system Bash on macOS. Claude Code runs the hooks with whichever `bash` is first in its `PATH`, so on macOS make sure that is the Homebrew one.
+Under Bash 3 the scripts say so instead of failing quietly. `cctokmon`, `install.sh`, `uninstall.sh` and `tm` print an error and exit with status 1. The hook scripts print one line to stderr, log nothing and exit 0, so a session is never interrupted. The statusline script needs only Bash 3.2, so it keeps working under the system Bash on macOS. Claude Code runs the hooks with whichever `bash` is first in its `PATH`, so on macOS make sure that is the Homebrew one.
 
 jq and tput are available via Homebrew if missing:
 ```bash
