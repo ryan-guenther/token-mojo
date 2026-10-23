@@ -25,7 +25,7 @@ public sealed class FolderListTests
             Session("a", "/home/alice/older", minutesAgo: 30),
             Session("b", "/home/alice/newer", minutesAgo: 5),
         ];
-        RepoInfo[] repos = [new("/home/alice/widgets", null), new("/home/alice/gadgets", null)];
+        RepoInfo[] repos = [new("/home/alice/widgets", []), new("/home/alice/gadgets", [])];
 
         // Act
         IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "/home/alice", sessions, repos);
@@ -43,7 +43,7 @@ public sealed class FolderListTests
             Session("a", "/home/alice/my-app", minutesAgo: 5),
             Session("b", "/home/alice/my-app", minutesAgo: 10),
         ];
-        RepoInfo[] repos = [new("/home/alice/my-app", null), new("/home/alice/widgets", null)];
+        RepoInfo[] repos = [new("/home/alice/my-app", []), new("/home/alice/widgets", [])];
 
         // Act
         IReadOnlyList<string> folders = FolderList.Build("~/my-app", "Ubuntu", "/home/alice", sessions, repos);
@@ -89,7 +89,7 @@ public sealed class FolderListTests
     {
         // Arrange
         SessionSnapshot[] sessions = [Session("a", "/srv/code/api", minutesAgo: 5)];
-        RepoInfo[] repos = [new("/srv/code/web", null)];
+        RepoInfo[] repos = [new("/srv/code/web", [])];
 
         // Act
         IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "/home/alice", sessions, repos);
@@ -102,7 +102,7 @@ public sealed class FolderListTests
     public void Build_NoKnownUser_KeepsAbsolutePathsAsTheyAre()
     {
         // Arrange
-        RepoInfo[] repos = [new("/home/alice/widgets", null)];
+        RepoInfo[] repos = [new("/home/alice/widgets", [])];
 
         // Act
         IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", null, [], repos);

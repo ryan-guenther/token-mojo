@@ -11,8 +11,8 @@ public sealed class LaunchHintsTests
 
     private static readonly IReadOnlyList<RepoInfo> Repos =
     [
-        new("/home/alice/gadgets", "https://github.com/octo/gadgets.git"),
-        new("/home/alice/widgets", "git@github.com:octo/widgets.git"),
+        WithOrigin("/home/alice/gadgets", "https://github.com/octo/gadgets.git"),
+        WithOrigin("/home/alice/widgets", "git@github.com:octo/widgets.git"),
     ];
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class LaunchHintsTests
     public void From_OriginInAnyCommonForm_MatchesThePullRequestsRepo(string origin)
     {
         // Arrange
-        IReadOnlyList<RepoInfo> repos = [new("/home/alice/widgets", origin)];
+        IReadOnlyList<RepoInfo> repos = [WithOrigin("/home/alice/widgets", origin)];
 
         // Act
         LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos);
@@ -106,11 +106,25 @@ public sealed class LaunchHintsTests
     [InlineData("https://gitlab.com/octo/widgets.git")]
     [InlineData("https://example.com/github.com/octo/widgets.git")]
     [InlineData("")]
-    [InlineData(null)]
-    public void From_NoRepoHasThatOrigin_KeepsTheWorktreeNameWithoutAFolder(string? origin)
+    public void From_NoRepoHasThatOrigin_KeepsTheWorktreeNameWithoutAFolder(string origin)
     {
         // Arrange
-        IReadOnlyList<RepoInfo> repos = [new("/home/alice/widgets", origin)];
+        IReadOnlyList<RepoInfo> repos = [WithOrigin("/home/alice/widgets", origin)];
+
+        // Act
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos);
+
+        // Assert
+        Assert.Null(hint.Folder);
+        Assert.Equal("pr-3", hint.Worktree);
+        Assert.False(hint.UseWorktree);
+    }
+
+    [Fact]
+    public void From_RepoWithoutRemotes_KeepsTheWorktreeNameWithoutAFolder()
+    {
+        // Arrange
+        IReadOnlyList<RepoInfo> repos = [new("/home/alice/widgets", [])];
 
         // Act
         LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos);
@@ -163,12 +177,54 @@ public sealed class LaunchHintsTests
         // Arrange
         IReadOnlyList<RepoInfo> repos =
         [
-            new("/home/alice/widgets", "https://github.com/octo/widgets.git"),
-            new("/home/alice/widgets-copy", "https://github.com/octo/widgets.git"),
+            WithOrigin("/home/alice/widgets", "https://github.com/octo/widgets.git"),
+            WithOrigin("/home/alice/widgets-copy", "https://github.com/octo/widgets.git"),
         ];
 
         // Act
         LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/1", Mapped, repos);
+
+        // Assert
+        Assert.Equal("/home/alice/widgets", hint.Folder);
+    }
+
+    [Fact]
+    public void From_ForkCheckout_MatchesThroughItsUpstreamRemote()
+    {
+        // Arrange
+        IReadOnlyList<RepoInfo> repos =
+        [
+            new("/home/alice/widgets",
+            [
+                new GitRemote("origin", "git@github.com:someone/widgets.git"),
+                new GitRemote("upstream", "https://github.com/octo/widgets.git"),
+            ]),
+        ];
+
+        // Act
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/7", Mapped, repos);
+
+        // Assert
+        Assert.Equal("/home/alice/widgets", hint.Folder);
+        Assert.True(hint.UseWorktree);
+    }
+
+    [Fact]
+    public void From_RepoWhoseOriginMatches_BeatsAnEarlierRepoMatchingOnlyThroughAnotherRemote()
+    {
+        // Arrange
+        IReadOnlyList<RepoInfo> repos =
+        [
+            new("/home/alice/fork",
+            [
+                new GitRemote("origin", "https://github.com/someone/widgets.git"),
+                new GitRemote("upstream", "https://github.com/octo/widgets.git"),
+            ]),
+            WithOrigin("/home/alice/widgets", "https://github.com/octo/widgets.git"),
+        ];
+
+        // Act
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/7", Mapped, repos);
 
         // Assert
         Assert.Equal("/home/alice/widgets", hint.Folder);
@@ -187,4 +243,6 @@ public sealed class LaunchHintsTests
         Assert.Equal("Pull request octo/widgets#12: folder /home/alice/widgets, worktree pr-12", pullRequest.Description);
         Assert.Equal("Pull request octo/other#5: no matching folder, worktree pr-5", unmatched.Description);
     }
+
+    private static RepoInfo WithOrigin(string path, string url) => new(path, [new GitRemote("origin", url)]);
 }

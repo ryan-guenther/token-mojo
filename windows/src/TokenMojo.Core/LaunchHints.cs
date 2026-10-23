@@ -13,8 +13,11 @@ public sealed record LaunchHint(string? Folder, string? Worktree, string? Descri
     public bool UseWorktree => Worktree is not null && Folder is not null;
 }
 
-/// <summary>A git repository found on a distro: its folder as Linux sees it and the URL of its origin remote.</summary>
-public sealed record RepoInfo(string Path, string? Origin);
+/// <summary>A named remote of a git repository and its URL.</summary>
+public sealed record GitRemote(string Name, string Url);
+
+/// <summary>A git repository found on a distro: its folder as Linux sees it and its remotes, in config order.</summary>
+public sealed record RepoInfo(string Path, IReadOnlyList<GitRemote> Remotes);
 
 /// <summary>Reads the first Linear issue or GitHub pull request link in a prompt and suggests where to work on it.</summary>
 public static partial class LaunchHints
@@ -44,16 +47,21 @@ public static partial class LaunchHints
         string repo = $"{pullRequest.Groups[1].Value}/{pullRequest.Groups[2].Value}";
         string number = pullRequest.Groups[3].Value;
         string worktree = $"pr-{number}";
-        string? folder = repos.FirstOrDefault(candidate => SameRepository(candidate.Origin, repo))?.Path;
+        // A clone of the repository itself beats a fork that has it as another remote, such as upstream.
+        string? folder = (repos.FirstOrDefault(candidate => HasRemote(candidate, repo, originOnly: true))
+            ?? repos.FirstOrDefault(candidate => HasRemote(candidate, repo, originOnly: false)))?.Path;
         return new LaunchHint(folder, worktree, Describe($"Pull request {repo}#{number}", folder, worktree));
     }
 
     private static string Describe(string source, string? folder, string worktree) =>
         $"{source}: {(folder is null ? "no matching folder" : $"folder {folder}")}, worktree {worktree}";
 
-    private static bool SameRepository(string? origin, string ownerAndRepo)
+    private static bool HasRemote(RepoInfo candidate, string ownerAndRepo, bool originOnly) =>
+        candidate.Remotes.Any(remote => (!originOnly || remote.Name == "origin") && SameRepository(remote.Url, ownerAndRepo));
+
+    private static bool SameRepository(string remoteUrl, string ownerAndRepo)
     {
-        if (origin is null || GitHubOrigin().Match(origin.Trim()) is not { Success: true } match) return false;
+        if (GitHubRemote().Match(remoteUrl.Trim()) is not { Success: true } match) return false;
         return string.Equals($"{match.Groups[1].Value}/{match.Groups[2].Value}", ownerAndRepo, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -65,5 +73,5 @@ public static partial class LaunchHints
 
     // https, ssh:// and scp-style remotes of github.com, with or without a user, ".git" or a trailing slash.
     [GeneratedRegex(@"\A(?:(?:https?|ssh)://(?:[^@/]+@)?github\.com/|[^@/:]+@github\.com:)([^/]+)/([^/]+?)(?:\.git)?/?\z", RegexOptions.IgnoreCase)]
-    private static partial Regex GitHubOrigin();
+    private static partial Regex GitHubRemote();
 }
