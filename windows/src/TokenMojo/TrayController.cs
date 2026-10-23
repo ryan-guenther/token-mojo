@@ -56,7 +56,7 @@ internal sealed class TrayController : IDisposable
         {
             if (e.Button == Forms.MouseButtons.Left) _flyout.Toggle();
         };
-        _notifyIcon.BalloonTipClicked += (_, _) => OnBalloonClicked();
+        _notifyIcon.BalloonTipClicked += async (_, _) => await OnBalloonClickedAsync();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         Render(null, DateTimeOffset.Now);
         _notifyIcon.Visible = true;
@@ -126,7 +126,7 @@ internal sealed class TrayController : IDisposable
     {
         // Without data or settings there is nothing to compare, so keep the last baseline.
         if (snapshot.Current is null || snapshot.Settings is null) return;
-        // Looking at the session's window is already being told.
+        // The user is already looking at this session's window.
         IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_alertBaseline, snapshot.Sessions, snapshot.Settings.LongTurn)
             .Where(alert => !SessionControl.IsForeground(alert.SessionId))
             .ToList();
@@ -138,13 +138,13 @@ internal sealed class TrayController : IDisposable
         _notifyIcon.ShowBalloonTip((int)BalloonDuration.TotalMilliseconds, balloon.Title, balloon.Text, Forms.ToolTipIcon.Info);
     }
 
-    private void OnBalloonClicked()
+    private async Task OnBalloonClickedAsync()
     {
         SessionSnapshot? session = _latest?.Sessions.FirstOrDefault(candidate => candidate.Id == _balloonSessionId);
         if (session is null)
             _flyout.Toggle();
         else
-            SessionControl.Activate(session.Id, session.Status, session.Distro, session.State.Workspace?.CurrentDir);
+            await SessionControl.ActivateAsync(SessionTarget.From(session));
     }
 
     private void Render(BridgeSnapshot? snapshot, DateTimeOffset now)

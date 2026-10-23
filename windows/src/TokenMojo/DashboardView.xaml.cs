@@ -25,12 +25,12 @@ public partial class DashboardView : UserControl
         Panel.Visibility = Visibility.Collapsed;
     }
 
-    private void OnRowClick(object sender, RoutedEventArgs e)
+    private async void OnRowClick(object sender, RoutedEventArgs e)
     {
         // A click on the row's context menu bubbles up to the row through the logical tree.
         if (e.OriginalSource is DependencyObject source && IsInsideMenu(source)) return;
         if (RowOf(sender) is { } row)
-            Acted(SessionControl.Activate(row.Id, row.Status, row.Distro, row.Cwd));
+            Acted(await SessionControl.ActivateAsync(SessionTarget.From(row)));
     }
 
     // Whether Focus applies depends on the windows open now, so it is decided as the menu opens.
@@ -56,16 +56,16 @@ public partial class DashboardView : UserControl
             Acted(SessionControl.Focus(row.Id));
     }
 
-    private void OnRowResume(object sender, RoutedEventArgs e)
+    private async void OnRowResume(object sender, RoutedEventArgs e)
     {
-        if (RowOfMenuItem(sender) is { Distro: { } distro } row)
-            Acted(SessionControl.Resume(row.Id, distro, row.Cwd));
+        if (RowOfMenuItem(sender) is { } row)
+            Acted(await SessionControl.ResumeAsync(SessionTarget.From(row)));
     }
 
-    private void OnRowOpenFolder(object sender, RoutedEventArgs e)
+    private async void OnRowOpenFolder(object sender, RoutedEventArgs e)
     {
-        if (RowOfMenuItem(sender) is { Distro: { } distro, Cwd: { } cwd })
-            SessionControl.OpenFolder(distro, cwd);
+        if (RowOfMenuItem(sender) is { } row)
+            await SessionControl.OpenFolderAsync(SessionTarget.From(row));
     }
 
     private void OnRowCopyId(object sender, RoutedEventArgs e)

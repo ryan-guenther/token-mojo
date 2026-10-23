@@ -26,5 +26,10 @@ internal static class TerminalWindows
         return Native.SetForegroundWindow(window);
     }
 
-    public static string ForegroundTitle() => Native.WindowText(Native.GetForegroundWindow());
+    /// <summary>The foreground window's title when it is a terminal window, else null.</summary>
+    public static string? ForegroundTitle()
+    {
+        IntPtr window = Native.GetForegroundWindow();
+        return Native.ClassName(window) == WindowClass ? Native.WindowText(window) : null;
+    }
 }

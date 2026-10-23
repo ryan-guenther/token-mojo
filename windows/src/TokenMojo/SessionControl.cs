@@ -7,7 +7,19 @@ using TokenMojo.Core;
 
 namespace TokenMojo;
 
-/// <summary>Carries out what <see cref="SessionActions"/> decides for a session: focus its window, resume it, open its folder. Failures are shown, never thrown.</summary>
+/// <summary>The session a click is about: where it runs and the folder to resume or open.</summary>
+internal sealed record SessionTarget(string Id, SessionStatus Status, string? Distro, string? User, string? Folder)
+{
+    public static SessionTarget From(SessionRowModel row) => new(row.Id, row.Status, row.Distro, row.User, row.Cwd);
+
+    public static SessionTarget From(SessionSnapshot session) =>
+        new(session.Id, session.Status, session.Distro, session.User, session.ResumeFolder);
+}
+
+/// <summary>
+/// Carries out what <see cref="SessionActions"/> decides for a session: focus its window, resume it, open its folder.
+/// Failures are shown, never thrown. Anything that touches the WSL share runs off the UI thread.
+/// </summary>
 internal static class SessionControl
 {
     private const string Caption = "TokenMojo";
@@ -15,19 +27,22 @@ internal static class SessionControl
         "This session looks like it's still running, but its window wasn't found. Resume in a new terminal anyway?";
     private const string UnavailableText =
         "This session's terminal window wasn't found. Only sessions started with tm can be focused, and only while their tab is the active one in its window. Resuming works for WSL sessions only.";
+    private const string FocusRefusedText =
+        "Windows did not allow switching to that window. Switch to it from the taskbar.";
+    private const string WindowGoneText = "That session's terminal window is no longer open.";
 
     /// <summary>The click on a session row. True when a window was brought forward or a resume was started.</summary>
-    public static bool Activate(string sessionId, SessionStatus status, string? distro, string? cwd)
+    public static async Task<bool> ActivateAsync(SessionTarget target)
     {
-        TerminalWindow? window = FindWindow(sessionId);
-        switch (SessionActions.Decide(status, distro, windowFound: window is not null))
+        TerminalWindow? window = FindWindow(target.Id);
+        switch (SessionActions.Decide(target.Status, target.Distro, windowFound: window is not null))
         {
             case SessionAction.Focus:
-                return TerminalWindows.Focus(window!.Handle);
+                return FocusWindow(window!);
             case SessionAction.ConfirmResume:
-                return Confirm(ConfirmResumeText) && Resume(sessionId, distro!, cwd);
+                return Confirm(ConfirmResumeText) && await ResumeAsync(target);
             case SessionAction.Resume:
-                return Resume(sessionId, distro!, cwd);
+                return await ResumeAsync(target);
             default:
                 Warn(UnavailableText);
                 return false;
@@ -36,17 +51,25 @@ internal static class SessionControl
 
     public static bool HasWindow(string sessionId) => FindWindow(sessionId) is not null;
 
-    /// <summary>False when no window carries the tag, or Windows would not switch to it.</summary>
-    public static bool Focus(string sessionId) =>
-        FindWindow(sessionId) is { } window && TerminalWindows.Focus(window.Handle);
-
-    public static bool IsForeground(string sessionId) => SessionWindows.Matches(TerminalWindows.ForegroundTitle(), sessionId);
-
-    public static bool Resume(string sessionId, string distro, string? cwd)
+    /// <summary>False when no window carries the tag, or Windows would not switch to it; either is shown.</summary>
+    public static bool Focus(string sessionId)
     {
+        if (FindWindow(sessionId) is { } window) return FocusWindow(window);
+        Warn(WindowGoneText);
+        return false;
+    }
+
+    /// <summary>True when the foreground window is a terminal carrying the session's tag.</summary>
+    public static bool IsForeground(string sessionId) =>
+        TerminalWindows.ForegroundTitle() is { } title && SessionWindows.Matches(title, sessionId);
+
+    public static async Task<bool> ResumeAsync(SessionTarget target)
+    {
+        if (target.Distro is not { } distro) return false;
         try
         {
-            ResumeCommand command = ResumeCommand.Build(distro, sessionId, cwd, Directory.Exists);
+            ResumeCommand command = await Task.Run(
+                () => ResumeCommand.Build(distro, target.User, target.Id, target.Folder, Directory.Exists));
             ProcessStartInfo startInfo = new(command.FileName) { UseShellExecute = false };
             foreach (string argument in command.Arguments)
                 startInfo.ArgumentList.Add(argument);
@@ -55,18 +78,19 @@ internal static class SessionControl
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException or ArgumentException)
         {
-            Trace.TraceWarning("TokenMojo: cannot resume session {0}: {1}", sessionId, e.Message);
+            Trace.TraceWarning("TokenMojo: cannot resume session {0}: {1}", target.Id, e.Message);
             Warn($"Could not open Windows Terminal to resume the session: {e.Message}");
             return false;
         }
     }
 
-    public static bool OpenFolder(string distro, string cwd)
+    public static async Task<bool> OpenFolderAsync(SessionTarget target)
     {
-        string path = WslPaths.SharePath(distro, cwd);
-        if (!Directory.Exists(path))
+        if (target.Distro is not { } distro || target.Folder is not { } folder) return false;
+        string path = WslPaths.SharePath(distro, folder);
+        if (!await Task.Run(() => Directory.Exists(path)))
         {
-            Warn($"The folder no longer exists: {cwd}");
+            Warn($"The folder no longer exists: {folder}");
             return false;
         }
         try
@@ -96,6 +120,13 @@ internal static class SessionControl
             Trace.TraceWarning("TokenMojo: cannot copy to the clipboard: {0}", e.Message);
             Warn($"Could not copy to the clipboard: {e.Message}");
         }
+    }
+
+    private static bool FocusWindow(TerminalWindow window)
+    {
+        if (TerminalWindows.Focus(window.Handle)) return true;
+        Warn(FocusRefusedText);
+        return false;
     }
 
     private static TerminalWindow? FindWindow(string sessionId)
