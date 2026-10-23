@@ -15,7 +15,8 @@ TokenMojo is the GUI on top of the same bridge files: a macOS menu bar app (`men
 ```
 cctokmon.sh              # Main monitor — entry point
 cctokmon-statusline.sh   # Companion statusline script (called by Claude Code on every interaction)
-install.sh               # Installer: deps check, symlink, statusline config
+cctokmon-hook.sh         # Claude Code hook (called on session events) that writes each session's status file
+install.sh               # Installer: deps check, symlink, statusline and hook config
 uninstall.sh             # Clean removal
 config.example           # Config template copied to ~/.config/cctokmon/config on install
 CLAUDE.md                # This file
@@ -82,6 +83,13 @@ bash windows/build.sh [target-dir]
 - On Windows only jq needs installing (Git Bash ships tput and awk); winget's links dir is added to `PATH` for the re-verify, since the running shell predates it.
 - Copies `cctokmon-statusline.sh` to `~/.claude/cctokmon-statusline.sh`.
 - Optionally sets `statusLine` in `~/.claude/settings.json` via `jq`. The correct format is an object: `{"type": "command", "command": "/path/to/script"}` — not a plain string (Claude Code's `/doctor` will flag a plain string as invalid).
+- Copies `cctokmon-hook.sh` to `~/.claude/` and, prompting once, appends `{"hooks":[{"type":"command","command":"<dest>"}]}` to each of `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `Notification`, `Stop` and `SessionEnd` in `settings.json`. Idempotent, and other hooks are left alone. `uninstall.sh` removes only entries whose command is ours.
+
+### Session status hook (`cctokmon-hook.sh`)
+
+- Writes `~/.claude/cctokmon-sessions/<session_id>.status` (`{"status", "since", "turn_started"}`) atomically, with the same `session_id` guard as the bridge. The `.status` extension keeps it out of the `*.json` scan.
+- It must never write to stdout (`SessionStart` and `UserPromptSubmit` stdout is added to Claude's context) and must always exit 0.
+- Mapping: `SessionStart` and `Stop` → `ready`; `UserPromptSubmit` and `PreToolUse` → `working` (`UserPromptSubmit` sets `turn_started`); `Notification` with type `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` or `agent_needs_input` → `needs_input` (other types write nothing); `SessionEnd` → `ended`.
 
 ### Config file
 
@@ -96,6 +104,8 @@ bash windows/build.sh [target-dir]
 - Shares everything outside the UI with the Mac app: the same bridge script, installer and file contract (`cctokmon-state.json`, `cctokmon-sessions/`, `CCTOKMON_STATE_FILE` / `CCTOKMON_SESSIONS_DIR`). Do not add a Windows-specific bridge; under native Windows, Claude Code runs the bash bridge through Git Bash.
 - Display rules mirror `menubar/TokenMojo.swift` and must stay in step with it: `livePercent` (null once `resets_at` has passed), severity thresholds 50/80, the 12-hour session window, "active" within 10 minutes, at most 10 session rows, reset/percent/cost wording. They live in `TokenMojo.Core` (`Gauges`, `Dashboard`, `SessionStore`) so they are unit-tested; the WPF project only binds to `DashboardModel`.
 - Sources: `ClaudeDirLocator` returns `%USERPROFILE%\.claude` plus `\\wsl.localhost\<distro>\home\*\.claude` (and `/root`) for distros listed by `wsl.exe --list --running --quiet` (UTF-16LE output). Only running distros are read, because touching a stopped distro's share boots it. Discovery reruns every minute; the bridge files are polled every 5 seconds off the UI thread.
+- Session status differs from the Mac app: the Windows app reads the hook's `.status` file (`SessionStatus`, `StatusAlerts`), so a row is needs input / ready / working / ended. Only a session with no status file falls back to the Mac app's 10-minute "active" rule. The list orders needs input, ready, working, no status, ended, then newest first, before the 10-row cap.
+- Alerts: a balloon tip on entering needs input, and on working → ready after a turn of at least `longTurnSeconds` (default 30) from `%APPDATA%\TokenMojo\settings.json`. The first load is a baseline and alerts nothing. An invalid settings file is shown in the flyout; defaults are never silently used. The tray ring's centre shows the waiting count (needs input plus ready) in place of the percentage.
 - The current state is the most recently written `cctokmon-state.json` across sources (rate limits are per account). Sessions from every source are merged into one list, newest first.
 - Failures stay per source: a distro that stops or denies access mid-read is skipped, never allowed to blank the others or throw out of the timer tick. Bridge files are opened with `FileShare.Delete` so the bridge's `mv` can rename over a file TokenMojo is reading on Windows.
 - Tray icon: one ring for the worst gauge, drawn by the same `RingGauge.Draw` as the dashboard rings and wrapped as a PNG `.ico`; taskbar light/dark comes from `SystemUsesLightTheme`, app light/dark from `AppsUseLightTheme`.

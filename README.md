@@ -101,6 +101,7 @@ The installer will:
 3. Symlink `cctokmon` to `~/.local/bin/cctokmon` (on Windows, a small launcher script, since Git Bash cannot reliably symlink)
 4. Copy the statusline companion script to `~/.claude/cctokmon-statusline.sh`
 5. Optionally configure the statusline bridge in `~/.claude/settings.json`
+6. Copy the session status hook to `~/.claude/cctokmon-hook.sh` and optionally register it in `~/.claude/settings.json` (used by the TokenMojo Windows app, see [Session status](#session-status))
 
 If `~/.local/bin` is not in your PATH, add this to your `~/.bashrc` or `~/.zshrc`:
 ```bash
@@ -207,6 +208,21 @@ cctokmon.sh  →  terminal dashboard
 
 The statusline script must complete in under 100ms (Claude Code requirement). It reads stdin, writes to a temp file, and atomically renames it. It also keeps a per-session copy in `~/.claude/cctokmon-sessions/<session_id>.json` (pruned after 7 days) so the menu bar app can list every recent session.
 
+### Session status
+
+`cctokmon-hook.sh` is a separate Claude Code hook that records what each session is doing, in `~/.claude/cctokmon-sessions/<session_id>.status`. The installer offers to register it for six events, adding an entry beside any hooks you already have:
+
+| Event | Status |
+|---|---|
+| `SessionStart`, `Stop` | ready |
+| `UserPromptSubmit`, `PreToolUse` | working |
+| `Notification` for a permission prompt or other question | needs input |
+| `SessionEnd` | ended |
+
+The hook never prints anything and always exits 0, so it cannot interrupt a session. Restart running sessions after registering it. The Windows app uses these files; the macOS app and `cctokmon` do not.
+
+Limits: pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
+
 ---
 
 ## TokenMojo: macOS menu bar app
@@ -267,11 +283,24 @@ Windows hides new tray icons under the **^** arrow beside the clock at first; dr
 
 - **The icon** is one ring for whichever of the 5-hour limit, 7-day limit and context window is highest, with that percentage inside: green under 50%, orange from 50%, red from 80%. `!` means 100% or more, and `–` means there is no data yet. A limit whose window has reset shows "Reset — awaiting update" in the dashboard until your next Claude Code interaction refreshes it.
 - **Hover** for all three gauges plus the session cost.
-- **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours. In that list a green dot means the session was active in the last 10 minutes, grey means idle, and the highlighted row is the current session.
+- **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours. In that list the highlighted row is the current session, and the dot shows its [status](#session-status): red needs input, teal ready for your next prompt, green working, grey ended. Sessions that never reported a status show green if active in the last 10 minutes and grey otherwise. Sessions needing you are listed first.
+- **Alerts** appear as a notification when a session needs input, and when a turn that took 30 seconds or more finishes. While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts.
 - **Pop Out Window** opens the same dashboard in a window that stays on top; closing it remembers where it was.
 - **Launch at Login** (in the dashboard or the right-click menu) starts it automatically. **Quit** is in both too.
 
 The 5-hour and 7-day rings appear only for Claude Pro and Max subscribers; with an API key there are no rate limits, so only the context window shows.
+
+### Settings
+
+`%APPDATA%\TokenMojo\settings.json` is created on first run:
+
+```json
+{
+  "longTurnSeconds": 30
+}
+```
+
+`longTurnSeconds` is how long a turn must take before finishing it raises an alert. The file is read on every refresh. If it is not valid JSON or has a bad value, the dashboard shows the error instead of falling back to defaults.
 
 ### Troubleshooting
 
@@ -286,9 +315,9 @@ The 5-hour and 7-day rings appear only for Claude Pro and Max subscribers; with 
 bash uninstall.sh
 ```
 
-Removes the symlink (or Windows launcher) at `~/.local/bin/cctokmon`, the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, and the `statusLine` entry from `~/.claude/settings.json`. Optionally removes `~/.config/cctokmon`.
+Removes the symlink (or Windows launcher) at `~/.local/bin/cctokmon`, the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook script at `~/.claude/cctokmon-hook.sh`, and the `statusLine` entry and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
 
-On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo` and `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position).
+On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position) and `%APPDATA%\TokenMojo` (settings).
 
 ---
 
