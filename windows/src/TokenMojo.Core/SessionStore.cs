@@ -4,7 +4,8 @@ namespace TokenMojo.Core;
 
 public sealed record SessionSnapshot(
     string Id, BridgeState State, DateTimeOffset Updated,
-    SessionStatus Status = SessionStatus.None, DateTimeOffset? StatusSince = null, DateTimeOffset? TurnStarted = null)
+    SessionStatus Status = SessionStatus.None, DateTimeOffset? StatusSince = null, DateTimeOffset? TurnStarted = null,
+    string? Distro = null)
 {
     public bool IsActive(DateTimeOffset now) => now - Updated < TimeSpan.FromMinutes(10);
 }
@@ -67,7 +68,7 @@ public static class SessionStore
                 sessions.Add(new Candidate(
                     new SessionSnapshot(
                         Path.GetFileNameWithoutExtension(file.Name), state, updated,
-                        events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted),
+                        events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted, source.Distro),
                     eventsWritten));
             }
         }

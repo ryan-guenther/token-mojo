@@ -73,6 +73,21 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadSessions_SessionFromADistroSource_RecordsTheDistro()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now.AddMinutes(-5));
+        _temp.Write("wsl/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now.AddMinutes(-1));
+        ClaudeSource distro = _temp.Source("wsl") with { Distro = "Ubuntu" };
+
+        // Act
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), distro], Now);
+
+        // Assert
+        Assert.Equal([("b", "Ubuntu"), ("a", null)], sessions.Select(s => (s.Id, s.Distro)));
+    }
+
+    [Fact]
     public void LoadSessions_UnreadableSourceDir_KeepsOtherSources()
     {
         // Arrange
