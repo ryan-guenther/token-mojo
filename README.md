@@ -210,7 +210,7 @@ The statusline script must complete in under 100ms (Claude Code requirement). It
 
 ### Session status
 
-`cctokmon-hook.sh` is a separate Claude Code hook that records what each session is doing, in `~/.claude/cctokmon-sessions/<session_id>.status`. The installer offers to register it for seven events, adding an entry beside any hooks you already have:
+`cctokmon-hook.sh` is a separate Claude Code hook that logs what each session is doing, one line per event, in `~/.claude/cctokmon-sessions/<session_id>.events` (event name and time only, never your prompts or tool input). TokenMojo reads the end of that log to get the status. The installer offers to register it for seven events, adding an entry beside any hooks you already have:
 
 | Event | Status |
 |---|---|
@@ -221,9 +221,9 @@ The statusline script must complete in under 100ms (Claude Code requirement). It
 
 The hook never prints anything and always exits 0, so it cannot interrupt a session. Restart running sessions after registering it. The Windows app uses these files; the macOS app and `cctokmon` do not.
 
-Needs input stays until the approved tool finishes, since that is the next event the hook sees. Events from subagents never clear it, because the main agent is still waiting on you.
+Needs input stays until a tool finishes, since that is the next event after the prompt; starting a tool, including a subagent's, does not clear it. A session that has ended stays ended until it starts again.
 
-Limits: pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
+Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
 
 ---
 
