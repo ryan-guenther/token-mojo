@@ -14,6 +14,11 @@ HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
 HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","PostToolUseFailure","Notification","Stop","SessionEnd"]'
+# Initialises submodules in new worktrees; apart from the hook above, which must stay a fast append
+WORKTREE_INIT_DEST="$CLAUDE_DIR/cctokmon-worktree-init.sh"
+WORKTREE_INIT_COMMAND="\"$WORKTREE_INIT_DEST\""
+# Seconds Claude Code waits for it: a submodule clone can take minutes
+WORKTREE_INIT_TIMEOUT=600
 
 # ── Colors ─────────────────────────────────────────────────────────────────────
 if tput colors &>/dev/null 2>&1 && [[ "$(tput colors)" -ge 8 ]]; then
@@ -220,6 +225,12 @@ cp "${SCRIPT_DIR}/cctokmon-hook.sh" "$HOOK_DEST"
 chmod +x "$HOOK_DEST"
 ok "Hook:       ${HOOK_DEST}"
 
+# Copy worktree submodule hook
+chmod +x "${SCRIPT_DIR}/cctokmon-worktree-init.sh"
+cp "${SCRIPT_DIR}/cctokmon-worktree-init.sh" "$WORKTREE_INIT_DEST"
+chmod +x "$WORKTREE_INIT_DEST"
+ok "Worktree:   ${WORKTREE_INIT_DEST}"
+
 # tm starts a tagged Claude Code session; leave a `tm` that is not ours alone
 chmod +x "${SCRIPT_DIR}/cctokmon-tm.sh"
 if [[ -e "${BIN_DIR}/tm" || -L "${BIN_DIR}/tm" ]] && ! is_our_tm "${BIN_DIR}/tm"; then
@@ -291,18 +302,24 @@ fi
 printf '\n%sRegister Claude Code session status hooks?%s\n' "${BOLD}" "${R}"
 printf 'This lets TokenMojo show which sessions are working, ready or need input.\n'
 printf 'It adds an entry for each of 8 events to "hooks" in ~/.claude/settings.json\n'
-printf 'and leaves your existing hooks alone.\n\n'
+printf 'and leaves your existing hooks alone. It also adds a SessionStart hook that\n'
+printf 'initialises submodules in worktrees started with tm --wt.\n\n'
 
 configure_hooks=0
 hooks_registered=0
+worktree_init_registered=false
 if [[ -f "$SETTINGS_FILE" ]]; then
     hooks_registered=$(jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
         [$events[] as $e | select([.hooks[$e][]?.hooks[]?.command] | index($cmd))] | length
     ' "$SETTINGS_FILE" 2>/dev/null || echo 0)
+    worktree_init_registered=$(jq -r --arg cmd "$WORKTREE_INIT_COMMAND" '
+        [.hooks.SessionStart[]?.hooks[]?.command] | index($cmd) != null
+    ' "$SETTINGS_FILE" 2>/dev/null || echo false)
     # A native jq.exe under Git Bash ends its lines with CRLF
     hooks_registered=${hooks_registered%$'\r'}
+    worktree_init_registered=${worktree_init_registered%$'\r'}
 fi
-if [[ "$hooks_registered" -eq 8 ]]; then
+if [[ "$hooks_registered" -eq 8 && "$worktree_init_registered" == "true" ]]; then
     ok "Hooks already registered in ${SETTINGS_FILE}"
 else
     printf '  Register now? [Y/n] '
@@ -317,11 +334,16 @@ if [[ "$configure_hooks" -eq 1 ]]; then
     fi
 
     local_tmp=$(mktemp)
-    jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
+    jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" \
+        --arg init "$WORKTREE_INIT_COMMAND" --argjson init_timeout "$WORKTREE_INIT_TIMEOUT" '
         reduce $events[] as $e (.;
             if ([.hooks[$e][]?.hooks[]?.command] | index($cmd)) then .
             else .hooks[$e] = ((.hooks[$e] // []) + [{"hooks": [{"type": "command", "command": $cmd}]}])
             end)
+        | if ([.hooks.SessionStart[]?.hooks[]?.command] | index($init)) then .
+          else .hooks.SessionStart = ((.hooks.SessionStart // [])
+              + [{"matcher": "startup", "hooks": [{"type": "command", "command": $init, "timeout": $init_timeout}]}])
+          end
     ' "$SETTINGS_FILE" > "$local_tmp"
     mv "$local_tmp" "$SETTINGS_FILE"
     ok "Hooks registered in ${SETTINGS_FILE}"
