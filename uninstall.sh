@@ -75,6 +75,18 @@ if [[ -L "${BIN_DIR}/cctokmon" ]] || grep -qx '# cctokmon launcher' "${BIN_DIR}/
     ok "Removed: ${BIN_DIR}/cctokmon"
 fi
 
+# Remove the tm symlink or launcher, unless that name belongs to something else
+tm_path="${BIN_DIR}/tm"
+if [[ -L "$tm_path" ]]; then
+    if [[ "$(readlink "$tm_path")" == */cctokmon-tm.sh ]]; then
+        rm "$tm_path"
+        ok "Removed: ${tm_path}"
+    fi
+elif grep -qx '# tm launcher' "$tm_path" 2>/dev/null; then
+    rm "$tm_path"
+    ok "Removed: ${tm_path}"
+fi
+
 # Remove statusline script
 if [[ -f "$STATUSLINE_DEST" ]]; then
     rm "$STATUSLINE_DEST"
