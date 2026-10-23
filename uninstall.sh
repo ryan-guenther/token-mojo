@@ -8,6 +8,8 @@ CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
+# Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
+HOOK_COMMAND="\"$HOOK_DEST\""
 HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","Notification","Stop","SessionEnd"]'
 STATE_FILE="$CLAUDE_DIR/cctokmon-state.json"
 SESSIONS_DIR="$CLAUDE_DIR/cctokmon-sessions"
@@ -67,9 +69,9 @@ fi
 
 # Remove our hook entries from settings.json, keeping everyone else's
 if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1 \
-    && jq -e --arg cmd "$HOOK_DEST" '[.hooks[]?[]?.hooks[]?.command] | index($cmd)' "$SETTINGS_FILE" >/dev/null 2>&1; then
+    && jq -e --arg cmd "$HOOK_COMMAND" '[.hooks[]?[]?.hooks[]?.command] | index($cmd)' "$SETTINGS_FILE" >/dev/null 2>&1; then
     local_tmp=$(mktemp)
-    jq --arg cmd "$HOOK_DEST" --argjson events "$HOOK_EVENTS" '
+    jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
         reduce $events[] as $e (.;
             if .hooks[$e] == null then .
             else .hooks[$e] |= [.[]

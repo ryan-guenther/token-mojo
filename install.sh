@@ -11,6 +11,8 @@ CONFIG_DIR="$HOME/.config/cctokmon"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
+# Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
+HOOK_COMMAND="\"$HOOK_DEST\""
 HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","Notification","Stop","SessionEnd"]'
 
 # ── Colors ─────────────────────────────────────────────────────────────────────
@@ -271,7 +273,7 @@ printf 'and leaves your existing hooks alone.\n\n'
 configure_hooks=0
 hooks_registered=0
 if [[ -f "$SETTINGS_FILE" ]]; then
-    hooks_registered=$(jq --arg cmd "$HOOK_DEST" --argjson events "$HOOK_EVENTS" '
+    hooks_registered=$(jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
         [$events[] as $e | select([.hooks[$e][]?.hooks[]?.command] | index($cmd))] | length
     ' "$SETTINGS_FILE" 2>/dev/null || echo 0)
 fi
@@ -290,7 +292,7 @@ if [[ "$configure_hooks" -eq 1 ]]; then
     fi
 
     local_tmp=$(mktemp)
-    jq --arg cmd "$HOOK_DEST" --argjson events "$HOOK_EVENTS" '
+    jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
         reduce $events[] as $e (.;
             if ([.hooks[$e][]?.hooks[]?.command] | index($cmd)) then .
             else .hooks[$e] = ((.hooks[$e] // []) + [{"hooks": [{"type": "command", "command": $cmd}]}])
