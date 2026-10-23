@@ -32,7 +32,12 @@ public sealed class RepoScannerTests : IDisposable
         // Assert
         RepoInfo repo = Assert.Single(repos);
         Assert.Equal("/home/alice/widgets", repo.Path);
-        Assert.Contains(new GitRemote("origin", "git@github.com:octo/widgets.git"), repo.Remotes);
+        Assert.Equal(
+            [
+                new GitRemote("upstream", "https://github.com/someone/else.git"),
+                new GitRemote("origin", "git@github.com:octo/widgets.git"),
+            ],
+            repo.Remotes);
     }
 
     [Fact]
@@ -76,6 +81,24 @@ public sealed class RepoScannerTests : IDisposable
                 new GitRemote("upstream", "https://github.com/octo/widgets.git"),
             ],
             Assert.Single(repos).Remotes);
+    }
+
+    [Fact]
+    public void Scan_RemoteWithSeveralUrls_IsReadOnceWithTheFirstUrl()
+    {
+        // Arrange
+        MakeRepo("home/alice/widgets", """
+            [remote "origin"]
+            	url = https://github.com/octo/widgets.git
+            	url = https://mirror.example.com/octo/widgets.git
+            	pushurl = git@github.com:octo/widgets.git
+            """);
+
+        // Act
+        IReadOnlyList<RepoInfo> repos = Scan(["~"]);
+
+        // Assert
+        Assert.Equal([new GitRemote("origin", "https://github.com/octo/widgets.git")], Assert.Single(repos).Remotes);
     }
 
     [Fact]
