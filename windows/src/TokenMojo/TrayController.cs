@@ -134,7 +134,7 @@ internal sealed class TrayController : IDisposable
         IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_alertBaseline, snapshot.Sessions, snapshot.Settings.LongTurn)
             .Where(alert => !SessionControl.IsForeground(alert.SessionId))
             .ToList();
-        _alertBaseline = StatusAlerts.Advance(_alertBaseline, snapshot.Sessions, DateTimeOffset.Now);
+        _alertBaseline = StatusAlerts.Advance(_alertBaseline, snapshot.Sessions, DateTimeOffset.Now, snapshot.Settings.LongTurn);
         if (alerts.Count == 0) return;
         AlertBalloon balloon = StatusAlerts.Balloon(alerts);
         // A balloon listing several sessions leads to the first.

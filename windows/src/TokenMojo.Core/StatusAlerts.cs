@@ -6,8 +6,9 @@ public sealed record StatusAlert(string SessionId, StatusAlertKind Kind, string 
 
 public sealed record AlertBalloon(string Title, string Text);
 
-/// <summary>What the last refresh saw of a session; Since tells two visits to the same status apart.</summary>
-public sealed record SeenStatus(SessionStatus Status, DateTimeOffset? Since, DateTimeOffset? TurnStarted, DateTimeOffset LastSeen);
+/// <summary>What the last refresh saw of a session; Since tells two visits to the same status apart, FinishedTurn is the turn already announced as finished.</summary>
+public sealed record SeenStatus(
+    SessionStatus Status, DateTimeOffset? Since, DateTimeOffset? TurnStarted, DateTimeOffset LastSeen, DateTimeOffset? FinishedTurn = null);
 
 /// <summary>Decides which status changes between refreshes deserve a notification. Session ids are unique in the lists it is given.</summary>
 public static class StatusAlerts
@@ -30,7 +31,8 @@ public static class StatusAlerts
             if (!changed) continue;
             if (session.Status == SessionStatus.NeedsInput)
                 alerts.Add(new StatusAlert(session.Id, StatusAlertKind.NeedsInput, Dashboard.SessionTitle(session.State), "Needs input"));
-            else if (previous is not null && session.Status == SessionStatus.Ready && FinishedLongTurn(session, longTurn))
+            else if (previous is not null && session.Status == SessionStatus.Ready && FinishedLongTurn(session, longTurn)
+                && session.TurnStarted != previous.FinishedTurn)
                 alerts.Add(new StatusAlert(session.Id, StatusAlertKind.TurnFinished, Dashboard.SessionTitle(session.State), "Finished"));
         }
         return alerts;
@@ -50,7 +52,7 @@ public static class StatusAlerts
 
     /// <summary>The baseline after a refresh: sessions missing this time are kept, so a gap does not lose what they were doing, until unseen for the recent window.</summary>
     public static IReadOnlyDictionary<string, SeenStatus> Advance(
-        IReadOnlyDictionary<string, SeenStatus>? baseline, IReadOnlyList<SessionSnapshot> current, DateTimeOffset now)
+        IReadOnlyDictionary<string, SeenStatus>? baseline, IReadOnlyList<SessionSnapshot> current, DateTimeOffset now, TimeSpan longTurn)
     {
         Dictionary<string, SeenStatus> next = (baseline ?? new Dictionary<string, SeenStatus>())
             .Where(entry => now - entry.Value.LastSeen < SessionStore.RecentWindow)
@@ -61,7 +63,14 @@ public static class StatusAlerts
             if (session.Status == SessionStatus.None && next.TryGetValue(session.Id, out SeenStatus? known) && known.Status != SessionStatus.None)
                 next[session.Id] = known with { LastSeen = now };
             else
-                next[session.Id] = new SeenStatus(session.Status, session.StatusSince, session.TurnStarted, now);
+            {
+                // A turn can show ready, working and ready again, so the turn announced is remembered, not just the status.
+                next.TryGetValue(session.Id, out SeenStatus? earlier);
+                DateTimeOffset? finishedTurn = session.Status == SessionStatus.Ready && FinishedLongTurn(session, longTurn)
+                    ? session.TurnStarted
+                    : earlier?.FinishedTurn;
+                next[session.Id] = new SeenStatus(session.Status, session.StatusSince, session.TurnStarted, now, finishedTurn);
+            }
         }
         return next;
     }
