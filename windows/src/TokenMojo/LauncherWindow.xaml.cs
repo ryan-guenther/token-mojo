@@ -41,6 +41,8 @@ public partial class LauncherWindow : Window
     private bool _folderChosen;
     private bool _worktreeChosen;
     private bool _starting;
+    // True from a distro change until its user has been chosen; Start waits.
+    private bool _choosing;
     private bool _closed;
     // Each distro change starts a scan; only the latest one may update the window.
     private int _generation;
@@ -118,19 +120,28 @@ public partial class LauncherWindow : Window
     {
         int generation = ++_generation;
         string distro = _distro!;
-        Settings settings = _settings!;
         // Nothing of the previous distro may be used to start a session in this one.
         _user = null;
         _home = null;
         _userNote = null;
         _userProblem = null;
-        StartButton.IsEnabled = false;
+        _choosing = true;
+        UpdateStartEnabled();
         LaunchUser choice = await ChooseUserAsync(distro);
         if (_closed || generation != _generation) return;
         _repos = [];
+        // A new home starts a new generation, which the scan below must carry.
         ApplyUser(choice, distro);
-        StartButton.IsEnabled = true;
+        generation = _generation;
+        _choosing = false;
+        UpdateStartEnabled();
+        await ScanReposAsync(distro, generation);
+    }
 
+    // Only the generation it started in may use the answer: a newer distro or home has its own scan.
+    private async Task ScanReposAsync(string distro, int generation)
+    {
+        Settings settings = _settings!;
         string? home = _home;
         IReadOnlyList<RepoInfo> repos = await Task.Run(() => RepoScanner.Scan(distro, home, settings.RepoRoots));
         if (_closed || generation != _generation) return;
@@ -138,6 +149,8 @@ public partial class LauncherWindow : Window
         ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, repos));
         ApplyHint();
     }
+
+    private void UpdateStartEnabled() => StartButton.IsEnabled = !_starting && !_choosing;
 
     // Asks the distro about each candidate's tm.
     private Task<LaunchUser> ChooseUserAsync(string distro)
@@ -148,16 +161,24 @@ public partial class LauncherWindow : Window
     }
 
     // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
-    private void ApplyUser(LaunchUser choice, string distro)
+    // True when the home changed, which invalidates a scan in flight (it ends its generation) and empties the repository list.
+    private bool ApplyUser(LaunchUser choice, string distro)
     {
+        bool homeChanged = _home != choice.Source?.Home;
         _user = choice.Source?.User;
         _home = choice.Source?.Home;
+        if (homeChanged)
+        {
+            _generation++;
+            _repos = [];
+        }
         _userNote = choice.Note;
         _userProblem = choice.Problem;
         HideError();
         if (choice.Problem is not null) ShowError(choice.Problem);
         ShowFolders(FolderList.Build(_settings!.DefaultFolder, distro, _home, _sessions, _repos));
         ApplyHint();
+        return homeChanged;
     }
 
     // Only the list changes: replacing the items can clear an editable box, and the user may be typing in it
@@ -213,19 +234,32 @@ public partial class LauncherWindow : Window
             return;
         }
         _starting = true;
-        StartButton.IsEnabled = false;
+        UpdateStartEnabled();
         CancelButton.IsEnabled = false;
-        string? error = await StartSessionAsync(distro, folder, worktree);
-        _starting = false;
+        string? error;
+        try
+        {
+            error = await StartSessionAsync(distro, folder, worktree);
+        }
+        // This is the edge of an async void handler: nothing may escape it, and the window must stay closable.
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException or AggregateException)
+        {
+            System.Diagnostics.Trace.TraceWarning("TokenMojo: cannot start a session: {0}", e.Message);
+            error = $"Could not start the session: {e.Message}";
+        }
+        finally
+        {
+            _starting = false;
+            if (!_closed) CancelButton.IsEnabled = true;
+        }
         if (_closed) return;
-        CancelButton.IsEnabled = true;
         if (error is null)
         {
             Close();
             return;
         }
         ShowError(error);
-        StartButton.IsEnabled = true;
+        UpdateStartEnabled();
     }
 
     // Returns what to show the user when the session could not be started, else null.
@@ -237,7 +271,7 @@ public partial class LauncherWindow : Window
             int generation = _generation;
             LaunchUser choice = await ChooseUserAsync(distro);
             if (_closed || generation != _generation) return "The distro changed; press Start again.";
-            ApplyUser(choice, distro);
+            if (ApplyUser(choice, distro)) _ = ScanReposAsync(distro, _generation);
             if (choice.Source is null) return choice.Problem;
         }
         LaunchRequest request = new(distro, _user!, folder, worktree, PromptBox.Text, _home);
