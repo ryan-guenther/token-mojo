@@ -4,7 +4,8 @@ namespace TokenMojo.Core;
 
 /// <param name="Worktree">A name for `claude -w`; null starts in the folder itself.</param>
 /// <param name="Prompt">Sent to Claude unchanged; blank sends nothing.</param>
-public sealed record LaunchRequest(string Distro, string User, string Folder, string? Worktree, string Prompt);
+/// <param name="Home">The user's home folder, which a folder written with a tilde is relative to.</param>
+public sealed record LaunchRequest(string Distro, string User, string Folder, string? Worktree, string Prompt, string? Home = null);
 
 public static class SessionLauncher
 {

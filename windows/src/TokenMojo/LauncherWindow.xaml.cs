@@ -33,6 +33,7 @@ public partial class LauncherWindow : Window
     private IReadOnlyList<RepoInfo> _repos = [];
     private string? _distro;
     private string? _user;
+    private string? _home;
     // Set while the code fills in a field, so only the user's own edits mark it as chosen.
     private bool _applying;
     private bool _folderChosen;
@@ -114,20 +115,23 @@ public partial class LauncherWindow : Window
         int generation = ++_generation;
         string distro = _distro!;
         Settings settings = _settings!;
-        string? user = LaunchTargets.UserFor(_sources, distro);
+        ClaudeSource? source = _sources.FirstOrDefault(candidate => string.Equals(candidate.Distro, distro, StringComparison.OrdinalIgnoreCase));
+        string? user = source?.User;
+        string? home = source?.Home;
         _user = user;
+        _home = home;
         _repos = [];
         HideError();
         if (user is null) ShowError(string.Format(NoUserText, distro));
         // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
-        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, user, _sessions, []));
+        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, []));
         ApplyHint();
         StartButton.IsEnabled = true;
 
-        IReadOnlyList<RepoInfo> repos = await Task.Run(() => RepoScanner.Scan(distro, user, settings.RepoRoots));
+        IReadOnlyList<RepoInfo> repos = await Task.Run(() => RepoScanner.Scan(distro, home, settings.RepoRoots));
         if (_closed || generation != _generation) return;
         _repos = repos;
-        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, user, _sessions, repos));
+        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, repos));
         ApplyHint();
     }
 
@@ -156,7 +160,7 @@ public partial class LauncherWindow : Window
         HintText.Visibility = hint.Description is null ? Visibility.Collapsed : Visibility.Visible;
         _applying = true;
         if (!_folderChosen)
-            FolderBox.Text = hint.Folder is { } folder ? LinuxFolder.Abbreviate(folder, _user) : _settings.DefaultFolder;
+            FolderBox.Text = hint.Folder is { } folder ? LinuxFolder.Abbreviate(folder, _home) : _settings.DefaultFolder;
         if (!_worktreeChosen)
         {
             WorktreeCheck.IsChecked = hint.UseWorktree;
@@ -187,7 +191,7 @@ public partial class LauncherWindow : Window
             ShowError(string.Format(NoUserText, distro));
             return;
         }
-        LaunchRequest request = new(distro, user, folder, worktree, PromptBox.Text);
+        LaunchRequest request = new(distro, user, folder, worktree, PromptBox.Text, _home);
         _starting = true;
         StartButton.IsEnabled = false;
         string? error = await Task.Run(() => TryLaunch(request));
@@ -207,9 +211,9 @@ public partial class LauncherWindow : Window
     {
         try
         {
-            if (SessionControl.TmMissing(request.Distro, request.User))
+            if (SessionControl.TmMissing(request.Distro, request.Home))
                 return SessionControl.TmMissingMessage(request.Distro, request.User);
-            string? start = LinuxFolder.Expand(request.Folder, request.User);
+            string? start = LinuxFolder.Expand(request.Folder, request.Home);
             if (start is null || !Directory.Exists(WslPaths.SharePath(request.Distro, start)))
                 return $"The folder does not exist in {request.Distro}: {request.Folder}";
             SessionLauncher.Launch(request, LaunchPrompt.DirectoryOnShare(request.Distro, request.User), TerminalProcess.Start);
@@ -266,7 +270,7 @@ public partial class LauncherWindow : Window
         OpenFolderDialog dialog = new()
         {
             Title = $"Choose a folder in {distro}",
-            InitialDirectory = WslPaths.SharePath(distro, _user is null ? "/" : WslPaths.HomeFolder(_user)),
+            InitialDirectory = WslPaths.SharePath(distro, _home ?? "/"),
         };
         if (dialog.ShowDialog(this) != true) return;
         if (WslPaths.ToLinuxPath(dialog.FolderName, distro) is not { } linuxPath)
@@ -276,7 +280,7 @@ public partial class LauncherWindow : Window
         }
         HideError();
         _applying = true;
-        FolderBox.Text = LinuxFolder.Abbreviate(linuxPath, _user);
+        FolderBox.Text = LinuxFolder.Abbreviate(linuxPath, _home);
         _applying = false;
         _folderChosen = true;
     }

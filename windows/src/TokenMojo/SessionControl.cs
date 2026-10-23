@@ -8,12 +8,12 @@ using TokenMojo.Core;
 namespace TokenMojo;
 
 /// <summary>The session a click is about: where it runs and the folder to resume or open.</summary>
-internal sealed record SessionTarget(string Id, SessionStatus Status, string? Distro, string? User, string? Folder)
+internal sealed record SessionTarget(string Id, SessionStatus Status, string? Distro, string? User, string? Home, string? Folder)
 {
-    public static SessionTarget From(SessionRowModel row) => new(row.Id, row.Status, row.Distro, row.User, row.Cwd);
+    public static SessionTarget From(SessionRowModel row) => new(row.Id, row.Status, row.Distro, row.User, row.Home, row.Cwd);
 
     public static SessionTarget From(SessionSnapshot session) =>
-        new(session.Id, session.Status, session.Distro, session.User, session.ResumeFolder);
+        new(session.Id, session.Status, session.Distro, session.User, session.Home, session.ResumeFolder);
 }
 
 /// <summary>
@@ -75,7 +75,7 @@ internal static class SessionControl
     private static async Task<bool> ResumeUnguardedAsync(SessionTarget target)
     {
         if (target.Distro is not { } distro) return false;
-        if (await Task.Run(() => TmMissing(distro, target.User)))
+        if (await Task.Run(() => TmMissing(distro, target.Home)))
         {
             Warn(TmMissingMessage(distro, target.User));
             return false;
@@ -147,8 +147,8 @@ internal static class SessionControl
     }
 
     // Without a known user there is no home folder to look in, so resume is left to fail visibly in the terminal.
-    internal static bool TmMissing(string distro, string? user) =>
-        WslPaths.TmInstallPath(distro, user) is { } path && !File.Exists(path);
+    internal static bool TmMissing(string distro, string? home) =>
+        WslPaths.TmInstallPath(distro, home) is { } path && !File.Exists(path);
 
     internal static string TmMissingMessage(string distro, string? user) => string.Format(TmMissingText, user, distro);
 

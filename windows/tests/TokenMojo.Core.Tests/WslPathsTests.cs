@@ -28,7 +28,7 @@ public sealed class WslPathsTests
     public void TmInstallPath_OrdinaryUser_IsUnderTheirHomeFolder()
     {
         // Act
-        string? path = WslPaths.TmInstallPath("Ubuntu", "alice", @"\\wsl.localhost");
+        string? path = WslPaths.TmInstallPath("Ubuntu", "/home/alice", @"\\wsl.localhost");
 
         // Assert
         Assert.Equal(@"\\wsl.localhost\Ubuntu\home\alice\.local\bin\tm", path);
@@ -38,14 +38,14 @@ public sealed class WslPathsTests
     public void TmInstallPath_RootUser_IsUnderRootsHome()
     {
         // Act
-        string? path = WslPaths.TmInstallPath("Ubuntu", "root", @"\\wsl.localhost");
+        string? path = WslPaths.TmInstallPath("Ubuntu", "/root", @"\\wsl.localhost");
 
         // Assert
         Assert.Equal(@"\\wsl.localhost\Ubuntu\root\.local\bin\tm", path);
     }
 
     [Fact]
-    public void TmInstallPath_UserNotKnown_IsNull()
+    public void TmInstallPath_HomeNotKnown_IsNull()
     {
         // Act / Assert
         Assert.Null(WslPaths.TmInstallPath("Ubuntu", null, @"\\wsl.localhost"));

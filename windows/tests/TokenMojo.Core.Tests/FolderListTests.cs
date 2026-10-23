@@ -10,7 +10,7 @@ public sealed class FolderListTests
     public void Build_NoSessionsOrRepos_IsJustTheDefault()
     {
         // Act
-        IReadOnlyList<string> folders = FolderList.Build("~/my-app", "Ubuntu", "alice", [], []);
+        IReadOnlyList<string> folders = FolderList.Build("~/my-app", "Ubuntu", "/home/alice", [], []);
 
         // Assert
         Assert.Equal(["~/my-app"], folders);
@@ -28,7 +28,7 @@ public sealed class FolderListTests
         RepoInfo[] repos = [new("/home/alice/widgets", null), new("/home/alice/gadgets", null)];
 
         // Act
-        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "alice", sessions, repos);
+        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "/home/alice", sessions, repos);
 
         // Assert
         Assert.Equal(["~", "~/newer", "~/older", "~/gadgets", "~/widgets"], folders);
@@ -46,7 +46,7 @@ public sealed class FolderListTests
         RepoInfo[] repos = [new("/home/alice/my-app", null), new("/home/alice/widgets", null)];
 
         // Act
-        IReadOnlyList<string> folders = FolderList.Build("~/my-app", "Ubuntu", "alice", sessions, repos);
+        IReadOnlyList<string> folders = FolderList.Build("~/my-app", "Ubuntu", "/home/alice", sessions, repos);
 
         // Assert
         Assert.Equal(["~/my-app", "~/widgets"], folders);
@@ -59,7 +59,7 @@ public sealed class FolderListTests
         SessionSnapshot[] sessions = [Session("a", "/home/alice/my-app/.claude/worktrees/eng-42", minutesAgo: 5)];
 
         // Act
-        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "alice", sessions, []);
+        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "/home/alice", sessions, []);
 
         // Assert
         Assert.Equal(["~", "~/my-app"], folders);
@@ -78,7 +78,7 @@ public sealed class FolderListTests
         ];
 
         // Act
-        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "alice", sessions, []);
+        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "/home/alice", sessions, []);
 
         // Assert
         Assert.Equal(["~", "~/here"], folders);
@@ -92,7 +92,7 @@ public sealed class FolderListTests
         RepoInfo[] repos = [new("/srv/code/web", null)];
 
         // Act
-        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "alice", sessions, repos);
+        IReadOnlyList<string> folders = FolderList.Build("~", "Ubuntu", "/home/alice", sessions, repos);
 
         // Assert
         Assert.Equal(["~", "/srv/code/api", "/srv/code/web"], folders);
