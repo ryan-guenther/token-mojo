@@ -47,9 +47,12 @@ new_session_id() {
 }
 
 # Names come from the folder or --wt; control characters would let them end the title escape early.
+# The controlling terminal is written to directly, so a redirected stdout or stderr does not lose the title.
 set_title() {
     local title=${1//[[:cntrl:]]/}
-    if [[ -t 1 ]]; then
+    if { printf '\033]0;%s\007' "$title" >/dev/tty; } 2>/dev/null; then
+        return
+    elif [[ -t 1 ]]; then
         printf '\033]0;%s\007' "$title"
     elif [[ -t 2 ]]; then
         printf '\033]0;%s\007' "$title" >&2
@@ -85,7 +88,8 @@ if [[ -n "$worktree" ]]; then
 fi
 
 if [[ -n "$resume_id" ]]; then
-    [[ "$resume_id" =~ ^[0-9A-Za-z-]+$ ]] || fail "invalid session id '$resume_id'"
+    [[ "$resume_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] ||
+        fail "invalid session id '$resume_id': expected a UUID"
     [[ -z "$worktree" && -z "$prompt_file" && ${#prompt_words[@]} -eq 0 ]] ||
         fail "--resume cannot be combined with --wt, --prompt-file or a prompt"
 fi
