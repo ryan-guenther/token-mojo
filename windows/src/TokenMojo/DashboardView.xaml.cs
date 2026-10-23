@@ -6,8 +6,9 @@ namespace TokenMojo;
 
 public partial class DashboardView : UserControl
 {
-    // The row the left button went down on; a click is a press and a release on the same row.
-    private object? _pressedRow;
+    // The session whose row the left button went down on; a click is a press and a release on the same session.
+    // By id, because the refresh rebuilds the row elements and one can be replaced between press and release.
+    private string? _pressedSessionId;
 
     public DashboardView() => InitializeComponent();
 
@@ -30,20 +31,20 @@ public partial class DashboardView : UserControl
 
     private void OnRowPress(object sender, RoutedEventArgs e)
     {
-        _pressedRow = e.OriginalSource is DependencyObject source && IsInsideMenu(source) ? null : sender;
+        _pressedSessionId = e.OriginalSource is DependencyObject source && IsInsideMenu(source) ? null : RowOf(sender)?.Id;
     }
 
     // Leaving the row cancels the click, so a stale press cannot pair with a later release.
-    private void OnRowLeave(object sender, RoutedEventArgs e) => _pressedRow = null;
+    private void OnRowLeave(object sender, RoutedEventArgs e) => _pressedSessionId = null;
 
     private async void OnRowClick(object sender, RoutedEventArgs e)
     {
-        bool pressedHere = ReferenceEquals(_pressedRow, sender);
-        _pressedRow = null;
+        string? pressedId = _pressedSessionId;
+        _pressedSessionId = null;
         // A click on the row's context menu bubbles up to the row through the logical tree. A release with no
         // press on this row is a click that dismissed the menu, or a drag from another row.
-        if (!pressedHere || e.OriginalSource is DependencyObject source && IsInsideMenu(source)) return;
-        if (RowOf(sender) is { } row)
+        if (e.OriginalSource is DependencyObject source && IsInsideMenu(source)) return;
+        if (RowOf(sender) is { } row && row.Id == pressedId)
             Acted(await SessionControl.ActivateAsync(SessionTarget.From(row)));
     }
 

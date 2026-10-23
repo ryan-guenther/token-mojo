@@ -33,7 +33,7 @@ internal static class SessionControl
     private const string FocusRefusedText =
         "Windows did not allow switching to that window. Switch to it from the taskbar.";
     private const string TmMissingText =
-        "tm is not installed for that user in {0}, so the session cannot be resumed there. Run install.sh in that distro.";
+        "Could not find tm for {0} in {1}. Run install.sh in that distro, or try again if the distro was just starting.";
     private const string WindowGoneText = "That session's terminal window is no longer open.";
 
     /// <summary>The click on a session row. True when a window was brought forward or a resume was started.</summary>
@@ -77,7 +77,7 @@ internal static class SessionControl
         if (target.Distro is not { } distro) return false;
         if (await Task.Run(() => TmMissing(distro, target.User)))
         {
-            Warn(string.Format(TmMissingText, distro));
+            Warn(string.Format(TmMissingText, target.User, distro));
             return false;
         }
         try
