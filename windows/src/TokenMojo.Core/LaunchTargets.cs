@@ -21,7 +21,7 @@ public static class LaunchTargets
     /// The default user comes first because it is who the distro share writes as and who a plain `wsl.exe` runs as.
     /// </summary>
     /// <param name="tmState">Inspects the tm of a user; asked at most once for each user, in order, until one is ours.</param>
-    public static LaunchUser ChooseUser(IEnumerable<ClaudeSource> sources, string distro, Func<ClaudeSource, TmState> tmState)
+    public static LaunchUser ChooseUser(IEnumerable<ClaudeSource> sources, string distro, Func<ClaudeSource, TmCheck> tmState)
     {
         List<ClaudeSource> candidates = sources
             .Where(source => string.Equals(source.Distro, distro, StringComparison.OrdinalIgnoreCase))
@@ -29,23 +29,23 @@ public static class LaunchTargets
             .ToList();
         if (candidates.Count == 0) return new LaunchUser(null, string.Format(NoClaudeFolderText, distro), null);
 
-        TmState first = TmState.Missing;
+        TmCheck first = TmState.Missing;
         ClaudeSource? notChecked = null;
         for (int index = 0; index < candidates.Count; index++)
         {
             ClaudeSource candidate = candidates[index];
-            TmState state = tmState(candidate);
+            TmCheck state = tmState(candidate);
             if (index == 0) first = state;
             // Not knowing about the default user is not a reason to start as someone else; for anyone else it is a reason to look on.
-            if (state == TmState.Unchecked && candidate.IsDefaultUser) return Problem(state, candidate, distro);
-            if (state == TmState.Unchecked) notChecked ??= candidate;
-            if (state != TmState.Ours) continue;
+            if (state.State == TmState.Unchecked && candidate.IsDefaultUser) return Problem(state, candidate, distro);
+            if (state.State == TmState.Unchecked) notChecked ??= candidate;
+            if (state.State != TmState.Ours) continue;
             return new LaunchUser(candidate, null, index > 0 && candidates[0].IsDefaultUser ? NoteFor(candidate, candidates[0]) : null);
         }
         return notChecked is null ? Problem(first, candidates[0], distro) : Problem(TmState.Unchecked, notChecked, distro);
     }
 
-    private static LaunchUser Problem(TmState state, ClaudeSource source, string distro) =>
+    private static LaunchUser Problem(TmCheck state, ClaudeSource source, string distro) =>
         new(null, TmInstall.ProblemText(state, source.User!, distro, source.Home!), null);
 
     private static string NoteFor(ClaudeSource chosen, ClaudeSource defaultUser) =>

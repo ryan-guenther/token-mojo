@@ -32,31 +32,42 @@ public sealed class TmInstallTests
     public void FromScript_ExitedZero_IsClassifiedByWhatItPrinted()
     {
         // Act / Assert
-        Assert.Equal((TmState.Ours, TmState.Foreign), (TmInstall.FromScript(0, TmScript), TmInstall.FromScript(0, "#!/bin/sh\n")));
+        Assert.Equal((TmState.Ours, TmState.Foreign), (TmInstall.FromScript(0, TmScript).State, TmInstall.FromScript(0, "#!/bin/sh\n").State));
     }
 
     [Fact]
     public void FromScript_NoTm_IsMissing()
     {
         // Act / Assert
-        Assert.Equal(TmState.Missing, TmInstall.FromScript(3, ""));
+        Assert.Equal(TmState.Missing, TmInstall.FromScript(3, "").State);
     }
 
     [Fact]
     public void FromScript_TmIsNotARegularFile_IsForeign()
     {
         // Act / Assert
-        Assert.Equal(TmState.Foreign, TmInstall.FromScript(4, ""));
+        Assert.Equal(TmState.Foreign, TmInstall.FromScript(4, "").State);
+    }
+
+    [Fact]
+    public void FromScript_ReadFailedAfterTheTmWasFound_IsUnreadable()
+    {
+        // Act / Assert
+        Assert.Equal(TmState.Unreadable, TmInstall.FromScript(5, "").State);
     }
 
     [Theory]
     [InlineData(1)]
-    [InlineData(-1)]
+    [InlineData(2)]
     [InlineData(127)]
-    public void FromScript_AnyOtherExit_IsUnreadableNotMissingOrUnchecked(int exitCode)
+    [InlineData(-1)]
+    public void FromScript_ExitTheScriptNeverUses_MeansTheCheckDidNotRunAndKeepsTheCode(int exitCode)
     {
-        // Act / Assert
-        Assert.Equal(TmState.Unreadable, TmInstall.FromScript(exitCode, ""));
+        // Act
+        TmCheck check = TmInstall.FromScript(exitCode, "");
+
+        // Assert
+        Assert.Equal((TmState.CouldNotRun, exitCode), (check.State, check.ExitCode));
     }
 
     [Fact]
@@ -72,11 +83,21 @@ public sealed class TmInstallTests
     }
 
     [Fact]
+    public void ProblemText_CouldNotRun_SaysSoWithTheExitCodeAndNotUnreadable()
+    {
+        // Act
+        string? text = TmInstall.ProblemText(new TmCheck(TmState.CouldNotRun, 127), "alice", "Ubuntu", "/home/alice");
+
+        // Assert
+        Assert.Equal("Could not check tm for alice in Ubuntu: the check could not run as that user (exit code 127).", text);
+    }
+
+    [Fact]
     public void InspectScript_FollowsTheLinkAndReadsOnlyTheStart()
     {
         // Act / Assert
         Assert.Equal(
-            "f=\"$HOME/.local/bin/tm\"; [ -e \"$f\" ] || exit 3; [ -f \"$f\" ] || exit 4; head -c 4096 -- \"$f\"",
+            "f=\"$HOME/.local/bin/tm\"; [ -e \"$f\" ] || exit 3; [ -f \"$f\" ] || exit 4; head -c 4096 -- \"$f\" || exit 5",
             TmInstall.InspectScript);
     }
 

@@ -131,6 +131,37 @@ public sealed class LaunchTargetsTests
     }
 
     [Fact]
+    public void ChooseUser_DefaultUsersTmCouldNotBeCheckedButALaterUserIsOurs_StillStopsTheSearch()
+    {
+        // Arrange
+        ClaudeSource[] sources = [Source("alice", isDefault: true), Source("bob")];
+        List<string> asked = new();
+
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser(sources, "Ubuntu", source =>
+        {
+            asked.Add(source.User!);
+            return source.User == "alice" ? TmState.Unchecked : TmState.Ours;
+        });
+
+        // Assert
+        Assert.Null(choice.Source);
+        Assert.StartsWith("Could not check tm for alice in Ubuntu", choice.Problem);
+        Assert.Equal(["alice"], asked);
+    }
+
+    [Fact]
+    public void ChooseUser_CheckCouldNotRunForAUser_IsSkippedAndReportedWithItsExitCodeWhenNobodyElseQualifies()
+    {
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser([Source("alice")], "Ubuntu", _ => new TmCheck(TmState.CouldNotRun, 127));
+
+        // Assert
+        Assert.Null(choice.Source);
+        Assert.Contains("exit code 127", choice.Problem);
+    }
+
+    [Fact]
     public void ChooseUser_NonDefaultCandidateCouldNotBeChecked_IsSkipped()
     {
         // Arrange
