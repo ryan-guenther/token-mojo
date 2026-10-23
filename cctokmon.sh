@@ -335,6 +335,8 @@ read_bridge_state() {
 
     local -a a
     mapfile -t a <<< "$values"
+    # A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR
+    a=("${a[@]%$'\r'}")
     [[ ${#a[@]} -lt 19 ]] && return 1
 
     MODEL_NAME="${a[0]}"
@@ -380,6 +382,7 @@ read_polling_state() {
 
     local -a da
     mapfile -t da <<< "$daily_vals"
+    da=("${da[@]%$'\r'}")
     DAILY_MESSAGES="${da[0]:-0}"
     DAILY_SESSIONS="${da[1]:-0}"
     DAILY_TOOL_CALLS="${da[2]:-0}"
@@ -392,9 +395,11 @@ read_polling_state() {
          (.value.cacheReadInputTokens     // 0),
          (.value.cacheCreationInputTokens // 0)] | @tsv
     ') 2>/dev/null || POLLING_MODEL_USAGE=""
+    POLLING_MODEL_USAGE=${POLLING_MODEL_USAGE//$'\r'/}
 
     CACHE_COMPUTED=$(printf '%s' "$json" | jq -r '.lastComputedDate // "unknown"' 2>/dev/null \
         || echo "unknown")
+    CACHE_COMPUTED=${CACHE_COMPUTED%$'\r'}
 
     LAST_UPDATE=$(date +%s)
     return 0
@@ -681,6 +686,7 @@ cmd_check() {
     [[ -f "$settings" ]] && command -v jq >/dev/null 2>&1 && \
         sl_cmd=$(jq -r '(.statusLine | objects | .command) // (.statusLine | strings) // empty' \
             "$settings" 2>/dev/null || true)
+    sl_cmd=${sl_cmd%$'\r'}
     local sl_is_ours=0 sl_note="" w
     if [[ "$sl_cmd" == *cctokmon-statusline.sh* ]]; then
         sl_is_ours=1

@@ -125,6 +125,8 @@ fi
 # Remove statusLine from settings.json
 if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     sl=$(jq -r '(.statusLine | if type == "object" then .command else . end) // empty' "$SETTINGS_FILE" 2>/dev/null || true)
+    # A native jq.exe under Git Bash ends its lines with CRLF
+    sl=${sl%$'\r'}
     if [[ "$sl" == *"cctokmon"* ]]; then
         local_tmp=$(mktemp)
         jq 'del(.statusLine)' "$SETTINGS_FILE" > "$local_tmp"

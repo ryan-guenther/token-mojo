@@ -20,6 +20,8 @@ printf '%s\n' "$input" > "$TMP_FILE" && mv "$TMP_FILE" "$STATE_FILE"
 SESSIONS_DIR="${CCTOKMON_SESSIONS_DIR:-$HOME/.claude/cctokmon-sessions}"
 if command -v jq >/dev/null 2>&1; then
     sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
+    # A native jq.exe under Git Bash ends its lines with CRLF
+    sid=${sid%$'\r'}
     # session_id becomes a filename, so accept only UUID-style characters
     if [[ "$sid" =~ ^[A-Za-z0-9-]+$ ]]; then
         mkdir -p "$SESSIONS_DIR"
@@ -36,6 +38,7 @@ if command -v jq >/dev/null 2>&1; then
             (.context_window.used_percentage // 0 | tostring)
         ] | @tsv
     ' 2>/dev/null)"
+    pct=${pct%$'\r'}
     LC_NUMERIC=C printf '$%.3f | ctx %s%%' "${cost:-0}" "${pct:-0}"
 else
     printf 'cctokmon'
