@@ -27,7 +27,14 @@ warn() { printf '%s⚠%s  %s\n' "${YELLOW}" "${R}" "$*"; }
 printf '\n%scctokmon uninstaller%s\n%s\n\n' "${BOLD}" "${R}" "────────────────────"
 
 # Remove our hook entries from settings.json first, keeping everyone else's. A settings file jq cannot
-# process stops the uninstall here, with the file and the hook script both left as they are.
+# process stops the uninstall here, with the file and the hook script both left as they are. Without
+# jq the entries cannot be checked, so the script stays too: they must never point at a missing file.
+keep_hook_script=0
+if [[ -f "$SETTINGS_FILE" ]] && ! command -v jq >/dev/null 2>&1; then
+    warn "jq not found, so ${SETTINGS_FILE} was not checked for cctokmon hooks; keeping ${HOOK_DEST}."
+    printf '  Remove its entries from %s by hand, then delete the script.\n' "$SETTINGS_FILE"
+    keep_hook_script=1
+fi
 if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     jq_error=$(mktemp)
     if ! has_hooks=$(jq -r --arg cmd "$HOOK_COMMAND" '[.hooks[]?[]?.hooks[]?.command] | index($cmd) != null' "$SETTINGS_FILE" 2>"$jq_error"); then
@@ -36,6 +43,8 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
         rm -f "$jq_error"
         exit 1
     fi
+    # A native jq.exe under Git Bash ends its lines with CRLF
+    has_hooks=${has_hooks%$'\r'}
     if [[ "$has_hooks" == "true" ]]; then
         local_tmp=$(mktemp)
         if ! jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
@@ -73,7 +82,7 @@ if [[ -f "$STATUSLINE_DEST" ]]; then
 fi
 
 # Remove session status hook script
-if [[ -f "$HOOK_DEST" ]]; then
+if [[ -f "$HOOK_DEST" && "$keep_hook_script" -eq 0 ]]; then
     rm "$HOOK_DEST"
     ok "Removed: ${HOOK_DEST}"
 fi

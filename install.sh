@@ -276,6 +276,8 @@ if [[ -f "$SETTINGS_FILE" ]]; then
     hooks_registered=$(jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
         [$events[] as $e | select([.hooks[$e][]?.hooks[]?.command] | index($cmd))] | length
     ' "$SETTINGS_FILE" 2>/dev/null || echo 0)
+    # A native jq.exe under Git Bash ends its lines with CRLF
+    hooks_registered=${hooks_registered%$'\r'}
 fi
 if [[ "$hooks_registered" -eq 8 ]]; then
     ok "Hooks already registered in ${SETTINGS_FILE}"
