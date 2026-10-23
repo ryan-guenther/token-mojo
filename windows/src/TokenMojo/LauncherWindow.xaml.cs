@@ -228,6 +228,9 @@ public partial class LauncherWindow : Window
 
     private async void OnStart(object sender, RoutedEventArgs e) => await StartAsync();
 
+    // IsCancel only closes a window shown with ShowDialog, and this one is shown with Show. Closing mid-launch is what the X does too.
+    private void OnCancel(object sender, RoutedEventArgs e) => Close();
+
     // Enter starts; Shift+Enter falls through to the box, which adds a line.
     private async void OnPromptKeyDown(object sender, KeyEventArgs e)
     {
