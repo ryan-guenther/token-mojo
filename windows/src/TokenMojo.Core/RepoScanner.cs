@@ -49,7 +49,7 @@ public static partial class RepoScanner
         {
             string git = Path.Combine(directory, ".git");
             if (!Directory.Exists(git)) return null;
-            return new RepoInfo($"{root}/{Path.GetFileName(directory)}", ReadOrigin(Path.Combine(git, "config")));
+            return new RepoInfo($"{root}/{Path.GetFileName(directory)}", ReadRemotes(Path.Combine(git, "config")));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -58,22 +58,27 @@ public static partial class RepoScanner
         }
     }
 
-    private static string? ReadOrigin(string configPath)
+    private static List<GitRemote> ReadRemotes(string configPath)
     {
-        if (!File.Exists(configPath)) return null;
-        bool inOrigin = false;
+        List<GitRemote> remotes = new();
+        if (!File.Exists(configPath)) return remotes;
+        string? remoteName = null;
         foreach (string line in File.ReadLines(configPath).Select(line => line.Trim()))
         {
             if (line.StartsWith('['))
-                inOrigin = OriginSection().IsMatch(line);
-            else if (inOrigin && UrlLine().Match(line) is { Success: true } url)
-                return url.Groups[1].Value;
+                remoteName = RemoteSection().Match(line) is { Success: true } section ? section.Groups[1].Value : null;
+            else if (remoteName is not null && UrlLine().Match(line) is { Success: true } url)
+            {
+                remotes.Add(new GitRemote(remoteName, url.Groups[1].Value));
+                // A remote with several urls fetches from the first.
+                remoteName = null;
+            }
         }
-        return null;
+        return remotes;
     }
 
-    [GeneratedRegex(@"\A\[remote\s+""origin""\]\z")]
-    private static partial Regex OriginSection();
+    [GeneratedRegex(@"\A\[remote\s+""([^""]+)""\]\z")]
+    private static partial Regex RemoteSection();
 
     [GeneratedRegex(@"\Aurl\s*=\s*(\S.*)\z")]
     private static partial Regex UrlLine();

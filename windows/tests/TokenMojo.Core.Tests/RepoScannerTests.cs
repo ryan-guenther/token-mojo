@@ -30,20 +30,67 @@ public sealed class RepoScannerTests : IDisposable
         IReadOnlyList<RepoInfo> repos = Scan(["~"]);
 
         // Assert
-        Assert.Equal([new RepoInfo("/home/alice/widgets", "git@github.com:octo/widgets.git")], repos);
+        RepoInfo repo = Assert.Single(repos);
+        Assert.Equal("/home/alice/widgets", repo.Path);
+        Assert.Contains(new GitRemote("origin", "git@github.com:octo/widgets.git"), repo.Remotes);
     }
 
     [Fact]
-    public void Scan_RepoWithoutAnOriginRemote_IsFoundWithoutOne()
+    public void Scan_RepoWithSeveralRemotes_ReadsEachInConfigOrder()
     {
         // Arrange
-        MakeRepo("home/alice/scratch", "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = https://github.com/a/b.git\n");
+        MakeRepo("home/alice/widgets", OriginConfig);
 
         // Act
         IReadOnlyList<RepoInfo> repos = Scan(["~"]);
 
         // Assert
-        Assert.Equal([new RepoInfo("/home/alice/scratch", null)], repos);
+        Assert.Equal(
+            [
+                new GitRemote("upstream", "https://github.com/someone/else.git"),
+                new GitRemote("origin", "git@github.com:octo/widgets.git"),
+            ],
+            Assert.Single(repos).Remotes);
+    }
+
+    [Fact]
+    public void Scan_RemoteSectionWithoutAUrl_IsSkipped()
+    {
+        // Arrange
+        MakeRepo("home/alice/widgets", """
+            [remote "origin"]
+            	url = https://github.com/someone/widgets.git
+            [remote "backup"]
+            	fetch = +refs/heads/*:refs/remotes/backup/*
+            [remote "upstream"]
+            	url = https://github.com/octo/widgets.git
+            """);
+
+        // Act
+        IReadOnlyList<RepoInfo> repos = Scan(["~"]);
+
+        // Assert
+        Assert.Equal(
+            [
+                new GitRemote("origin", "https://github.com/someone/widgets.git"),
+                new GitRemote("upstream", "https://github.com/octo/widgets.git"),
+            ],
+            Assert.Single(repos).Remotes);
+    }
+
+    [Fact]
+    public void Scan_RepoWithoutRemotes_IsFoundWithNone()
+    {
+        // Arrange
+        MakeRepo("home/alice/scratch", "[core]\n\tbare = false\n[branch \"main\"]\n\tmerge = refs/heads/main\n");
+
+        // Act
+        IReadOnlyList<RepoInfo> repos = Scan(["~"]);
+
+        // Assert
+        RepoInfo repo = Assert.Single(repos);
+        Assert.Equal("/home/alice/scratch", repo.Path);
+        Assert.Empty(repo.Remotes);
     }
 
     [Fact]
@@ -56,7 +103,9 @@ public sealed class RepoScannerTests : IDisposable
         IReadOnlyList<RepoInfo> repos = Scan(["~"]);
 
         // Assert
-        Assert.Equal([new RepoInfo("/home/alice/fresh", null)], repos);
+        RepoInfo repo = Assert.Single(repos);
+        Assert.Equal("/home/alice/fresh", repo.Path);
+        Assert.Empty(repo.Remotes);
     }
 
     [Fact]
