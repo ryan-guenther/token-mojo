@@ -1,7 +1,8 @@
 namespace TokenMojo.Core;
 
 /// <param name="Distro">The WSL distro this source lives in; null for the Windows profile.</param>
-public sealed record ClaudeSource(string Name, string StateFile, string SessionsDir, string? Distro = null);
+/// <param name="User">The Linux user whose ~/.claude it is; null for the Windows profile.</param>
+public sealed record ClaudeSource(string Name, string StateFile, string SessionsDir, string? Distro = null, string? User = null);
 
 public interface IWslDistros
 {
@@ -50,7 +51,7 @@ public sealed class ClaudeDirLocator(
             .Select(entry => (entry.User, Claude: Path.Combine(entry.Home, ".claude")))
             .Where(entry => Directory.Exists(entry.Claude))
             .Select(entry => new ClaudeSource($"{distro}:{entry.User}",
-                Path.Combine(entry.Claude, StateFileName), Path.Combine(entry.Claude, SessionsDirName), distro))
+                Path.Combine(entry.Claude, StateFileName), Path.Combine(entry.Claude, SessionsDirName), distro, entry.User))
             .ToList();
     }
 }

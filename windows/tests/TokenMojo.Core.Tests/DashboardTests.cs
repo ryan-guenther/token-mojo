@@ -129,7 +129,7 @@ public sealed class DashboardTests : IDisposable
     public void Build_Directory_AbbreviatesHomeWithTilde(string directory, string expected)
     {
         // Arrange
-        BridgeState state = BridgeState.Parse("{}") with { Workspace = new BridgeWorkspace(directory) };
+        BridgeState state = BridgeState.Parse("{}") with { Workspace = new BridgeWorkspace(directory, null) };
 
         // Act / Assert
         Assert.Equal(expected, Build(state).Directory);
@@ -193,7 +193,7 @@ public sealed class DashboardTests : IDisposable
         Assert.Equal(
             new SessionRowModel("abc-123", "proj", "proj · Opus · 5 min. ago", "$1.23", 8, "8%", Severity.Ok,
                 SessionStatus.None, "Active in the last 10 minutes", IsActive: true, IsCurrent: true,
-                Distro: null, Cwd: "/home/alice/proj", CanResume: false),
+                Distro: null, Cwd: "/home/alice/proj", CanResume: false, User: null),
             row);
     }
 
@@ -201,13 +201,44 @@ public sealed class DashboardTests : IDisposable
     public void Build_SessionOnAWslSource_CarriesDistroFolderAndCanResume()
     {
         // Arrange
-        SessionSnapshot session = new("abc-123", BridgeState.Parse(Payloads.Full), Now, Distro: "Ubuntu");
+        SessionSnapshot session = new("abc-123", BridgeState.Parse(Payloads.Full), Now, Distro: "Ubuntu", User: "alice");
 
         // Act
         SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
 
         // Assert
-        Assert.Equal(("Ubuntu", "/home/alice/proj", true), (row.Distro, row.Cwd, row.CanResume));
+        Assert.Equal(("Ubuntu", "alice", "/home/alice/proj", true), (row.Distro, row.User, row.Cwd, row.CanResume));
+    }
+
+    [Fact]
+    public void Build_SessionStartedInAnotherFolder_ResumesAndOpensTheProjectFolder()
+    {
+        // Arrange
+        BridgeState state = BridgeState.Parse(Payloads.Full) with
+        {
+            Workspace = new BridgeWorkspace("/home/alice/proj/sub", "/home/alice/proj"),
+        };
+        SessionSnapshot session = new("abc-123", state, Now, Distro: "Ubuntu");
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.Equal("/home/alice/proj", row.Cwd);
+    }
+
+    [Fact]
+    public void Build_SessionWithoutProjectFolder_UsesTheCurrentFolder()
+    {
+        // Arrange
+        BridgeState state = BridgeState.Parse(Payloads.Full) with { Workspace = new BridgeWorkspace("/home/alice/proj/sub", null) };
+        SessionSnapshot session = new("abc-123", state, Now, Distro: "Ubuntu");
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.Equal("/home/alice/proj/sub", row.Cwd);
     }
 
     [Fact]

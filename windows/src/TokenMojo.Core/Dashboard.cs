@@ -25,7 +25,7 @@ public sealed record SessionListModel(string Summary, IReadOnlyList<SessionRowMo
 public sealed record SessionRowModel(
     string Id, string Title, string Detail, string CostText, double ContextBarPercent, string ContextText,
     Severity ContextSeverity, SessionStatus Status, string StatusText, bool IsActive, bool IsCurrent,
-    string? Distro, string? Cwd, bool CanResume);
+    string? Distro, string? Cwd, bool CanResume, string? User);
 
 /// <summary>Everything the dashboard shows, formatted as DashboardPanel in menubar/TokenMojo.swift formats it.</summary>
 public static class Dashboard
@@ -117,7 +117,7 @@ public static class Dashboard
                 StatusText(session, now),
                 session.Status == SessionStatus.None && session.IsActive(now),
                 session.Id == currentId,
-                session.Distro, state.Workspace?.CurrentDir, session.Distro is not null);
+                session.Distro, session.ResumeFolder, session.Distro is not null, session.User);
         }).ToList();
         return new SessionListModel($"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", rows);
     }

@@ -15,6 +15,16 @@ public sealed class WslPathsTests
     }
 
     [Fact]
+    public void SharePath_PathWithoutLeadingSlash_IsStillSeparatedFromTheDistroName()
+    {
+        // Act
+        string path = WslPaths.SharePath("Ubuntu", "home/alice", @"\\wsl.localhost");
+
+        // Assert
+        Assert.Equal(@"\\wsl.localhost\Ubuntu\home\alice", path);
+    }
+
+    [Fact]
     public void SharePath_RootFolder_IsTheDistroRoot()
     {
         // Act / Assert

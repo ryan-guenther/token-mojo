@@ -6,5 +6,5 @@ public static class WslPaths
 
     /// <summary>The Windows path of a Linux folder, through the distro's network share.</summary>
     public static string SharePath(string distro, string linuxPath, string shareRoot = DefaultShareRoot) =>
-        $@"{shareRoot}\{distro}{linuxPath.Replace('/', '\\')}".TrimEnd('\\');
+        $@"{shareRoot}\{distro}\{linuxPath.Replace('/', '\\').TrimStart('\\')}".TrimEnd('\\');
 }

@@ -11,12 +11,15 @@ public sealed class ResumeCommandTests
     public void Build_FolderExists_OpensANewWindowInThatFolderResumingTheSession()
     {
         // Act
-        ResumeCommand command = ResumeCommand.Build("Ubuntu", SessionId, "/home/alice/my app", _ => true);
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, "/home/alice/my app", _ => true);
 
         // Assert
         Assert.Equal("wt.exe", command.FileName);
         Assert.Equal(
-            ["-w", "new", "wsl.exe", "-d", "Ubuntu", "--cd", "/home/alice/my app", "--", "bash", "-lc", $"tm --resume {SessionId}"],
+            [
+                "-w", "new", "wsl.exe", "-d", "Ubuntu", "-u", "alice", "--cd", "/home/alice/my app", "--", "bash", "-lc",
+                $"~/.local/bin/tm --resume {SessionId}",
+            ],
             command.Arguments);
     }
 
@@ -27,7 +30,7 @@ public sealed class ResumeCommandTests
         List<string> checkedPaths = new();
 
         // Act
-        ResumeCommand.Build("Ubuntu", SessionId, "/home/alice/my-app", path =>
+        ResumeCommand.Build("Ubuntu", "alice", SessionId, "/home/alice/my-app", path =>
         {
             checkedPaths.Add(path);
             return true;
@@ -44,7 +47,7 @@ public sealed class ResumeCommandTests
         string worktree = "/home/alice/my-app/.claude/worktrees/fix-login";
 
         // Act
-        ResumeCommand command = ResumeCommand.Build("Ubuntu", SessionId, worktree, path => !path.Contains("worktrees"));
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, worktree, path => !path.Contains("worktrees"));
 
         // Assert
         Assert.Equal("/home/alice/my-app", CdTarget(command));
@@ -57,7 +60,7 @@ public sealed class ResumeCommandTests
         string worktree = "/home/alice/my-app/.claude/worktrees/fix-login";
 
         // Act
-        ResumeCommand command = ResumeCommand.Build("Ubuntu", SessionId, worktree, _ => true);
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, worktree, _ => true);
 
         // Assert
         Assert.Equal(worktree, CdTarget(command));
@@ -70,7 +73,7 @@ public sealed class ResumeCommandTests
         string inside = "/home/alice/my-app/.claude/worktrees/fix-login/src";
 
         // Act
-        ResumeCommand command = ResumeCommand.Build("Ubuntu", SessionId, inside, path => !path.Contains("worktrees"));
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, inside, path => !path.Contains("worktrees"));
 
         // Assert
         Assert.Equal("/home/alice/my-app", CdTarget(command));
@@ -83,7 +86,7 @@ public sealed class ResumeCommandTests
     public void Build_FolderIsMissingAndNotAWorktree_StartsInTheHomeFolder(string? cwd)
     {
         // Act
-        ResumeCommand command = ResumeCommand.Build("Ubuntu", SessionId, cwd, _ => false);
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, cwd, _ => false);
 
         // Assert
         Assert.Equal("~", CdTarget(command));
@@ -93,7 +96,7 @@ public sealed class ResumeCommandTests
     public void Build_RepositoryRootIsAlsoMissing_StartsInTheHomeFolder()
     {
         // Act
-        ResumeCommand command = ResumeCommand.Build("Ubuntu", SessionId, "/home/alice/my-app/.claude/worktrees/x", _ => false);
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, "/home/alice/my-app/.claude/worktrees/x", _ => false);
 
         // Assert
         Assert.Equal("~", CdTarget(command));
@@ -103,11 +106,42 @@ public sealed class ResumeCommandTests
     public void Build_FolderHasSemicolon_EscapesItSoWindowsTerminalKeepsOneCommand()
     {
         // Act
-        ResumeCommand command = ResumeCommand.Build("Ubuntu", SessionId, "/home/alice/a;b", _ => true);
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, "/home/alice/a;b", _ => true);
 
         // Assert
         Assert.Equal(@"/home/alice/a\;b", CdTarget(command));
         Assert.DoesNotContain(command.Arguments, argument => argument.Replace(@"\;", "").Contains(';'));
+    }
+
+    [Fact]
+    public void Build_NoUser_LeavesOutTheUserArgument()
+    {
+        // Act
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", null, SessionId, "/home/alice", _ => true);
+
+        // Assert
+        Assert.DoesNotContain("-u", command.Arguments);
+    }
+
+    [Fact]
+    public void Build_RootUser_RunsAsRoot()
+    {
+        // Act
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "root", SessionId, "/root", _ => true);
+
+        // Assert
+        Assert.Equal("root", command.Arguments[command.Arguments.ToList().IndexOf("-u") + 1]);
+    }
+
+    [Fact]
+    public void Build_CallsTmByHomeRelativePathWithoutQuotes_SoTheLoginShellNeedsNoPathAndWtNeedsNoEscaping()
+    {
+        // Act
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId, "/home/alice", _ => true);
+
+        // Assert
+        Assert.DoesNotContain(command.Arguments, argument => argument.Contains('"') || argument.Contains('\''));
+        Assert.StartsWith("~/.local/bin/tm --resume ", command.Arguments[^1]);
     }
 
     [Theory]
@@ -115,10 +149,25 @@ public sealed class ResumeCommandTests
     [InlineData("abc; rm -rf ~")]
     [InlineData("abc def")]
     [InlineData("$(id)")]
-    public void Build_SessionIdHasCharactersAShellWouldInterpret_Throws(string sessionId)
+    [InlineData("abc-123")]
+    [InlineData("-3636af4c-8a5c-4e7f-a26c-739e5f93af06")]
+    [InlineData("3636af4c-8a5c-4e7f-a26c-739e5f93af06\n")]
+    [InlineData("3636af4c-8a5c-4e7f-a26c-739e5f93af0g")]
+    [InlineData("3636af4c8a5c4e7fa26c739e5f93af06")]
+    public void Build_SessionIdIsNotAUuid_Throws(string sessionId)
     {
         // Act / Assert
-        Assert.Throws<ArgumentException>(() => ResumeCommand.Build("Ubuntu", sessionId, "/home/alice", _ => true));
+        Assert.Throws<ArgumentException>(() => ResumeCommand.Build("Ubuntu", "alice", sessionId, "/home/alice", _ => true));
+    }
+
+    [Fact]
+    public void Build_UppercaseUuid_IsAccepted()
+    {
+        // Act
+        ResumeCommand command = ResumeCommand.Build("Ubuntu", "alice", SessionId.ToUpperInvariant(), "/home/alice", _ => true);
+
+        // Assert
+        Assert.EndsWith(SessionId.ToUpperInvariant(), command.Arguments[^1]);
     }
 
     private static string CdTarget(ResumeCommand command) => command.Arguments[command.Arguments.ToList().IndexOf("--cd") + 1];

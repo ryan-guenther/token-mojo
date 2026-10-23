@@ -54,8 +54,8 @@ public sealed class ClaudeDirLocatorTests : IDisposable
         // Assert
         Assert.Equal(
             [
-                new ClaudeSource("Ubuntu:alice", Path.Combine(alice, "cctokmon-state.json"), Path.Combine(alice, "cctokmon-sessions"), "Ubuntu"),
-                new ClaudeSource("Ubuntu:root", Path.Combine(root, "cctokmon-state.json"), Path.Combine(root, "cctokmon-sessions"), "Ubuntu"),
+                new ClaudeSource("Ubuntu:alice", Path.Combine(alice, "cctokmon-state.json"), Path.Combine(alice, "cctokmon-sessions"), "Ubuntu", "alice"),
+                new ClaudeSource("Ubuntu:root", Path.Combine(root, "cctokmon-state.json"), Path.Combine(root, "cctokmon-sessions"), "Ubuntu", "root"),
             ],
             wslSources);
     }

@@ -8,20 +8,22 @@ public sealed partial record ResumeCommand(string FileName, IReadOnlyList<string
     private const string WorktreeMarker = "/.claude/worktrees/";
     private const string HomeFolder = "~";
 
+    /// <param name="user">The Linux user the session belongs to; null runs as the distro's default user.</param>
     /// <param name="cwd">The session's folder as Linux sees it, which may be a worktree that has since been removed.</param>
     /// <param name="directoryExists">Asked about the folder's path on the distro share.</param>
     public static ResumeCommand Build(
-        string distro, string sessionId, string? cwd, Func<string, bool> directoryExists, string wslShareRoot = WslPaths.DefaultShareRoot)
+        string distro, string? user, string sessionId, string? cwd, Func<string, bool> directoryExists, string wslShareRoot = WslPaths.DefaultShareRoot)
     {
-        if (!SafeSessionId().IsMatch(sessionId))
+        if (!SessionUuid().IsMatch(sessionId))
             throw new ArgumentException($"Not a session id: '{sessionId}'", nameof(sessionId));
         string folder = Folders(cwd)
             .FirstOrDefault(candidate => directoryExists(WslPaths.SharePath(distro, candidate, wslShareRoot)))
             ?? HomeFolder;
-        string[] arguments =
-        [
-            "-w", "new", "wsl.exe", "-d", distro, "--cd", folder, "--", "bash", "-lc", $"tm --resume {sessionId}",
-        ];
+        List<string> arguments = ["-w", "new", "wsl.exe", "-d", distro];
+        if (user is not null) arguments.AddRange(["-u", user]);
+        // tm by its install path: a login shell does not see a PATH that only .bashrc sets. The tilde is left
+        // for bash to expand and there are no quotes, so wt.exe and wsl.exe have nothing to unescape.
+        arguments.AddRange(["--cd", folder, "--", "bash", "-lc", $"~/.local/bin/tm --resume {sessionId}"]);
         return new ResumeCommand("wt.exe", arguments.Select(EscapeForWindowsTerminal).ToList());
     }
 
@@ -37,6 +39,6 @@ public sealed partial record ResumeCommand(string FileName, IReadOnlyList<string
     // wt.exe reads an unescaped semicolon as the start of its next command.
     private static string EscapeForWindowsTerminal(string argument) => argument.Replace(";", @"\;");
 
-    [GeneratedRegex("^[0-9A-Za-z-]+$")]
-    private static partial Regex SafeSessionId();
+    [GeneratedRegex(@"\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\z")]
+    private static partial Regex SessionUuid();
 }

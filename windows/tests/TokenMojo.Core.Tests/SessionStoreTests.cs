@@ -78,13 +78,13 @@ public sealed class SessionStoreTests : IDisposable
         // Arrange
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now.AddMinutes(-5));
         _temp.Write("wsl/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now.AddMinutes(-1));
-        ClaudeSource distro = _temp.Source("wsl") with { Distro = "Ubuntu" };
+        ClaudeSource distro = _temp.Source("wsl") with { Distro = "Ubuntu", User = "alice" };
 
         // Act
         IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), distro], Now);
 
         // Assert
-        Assert.Equal([("b", "Ubuntu"), ("a", null)], sessions.Select(s => (s.Id, s.Distro)));
+        Assert.Equal([("b", "Ubuntu", "alice"), ("a", null, null)], sessions.Select(s => (s.Id, s.Distro, s.User)));
     }
 
     [Fact]
