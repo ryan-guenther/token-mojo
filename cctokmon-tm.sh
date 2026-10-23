@@ -94,20 +94,24 @@ if [[ -n "$resume_id" ]]; then
         fail "--resume cannot be combined with --wt, --prompt-file or a prompt"
 fi
 
-command -v claude >/dev/null 2>&1 || { printf 'tm: claude not found in PATH\n' >&2; exit 1; }
+# Prompt files the launcher wrote that no tm ever read (the terminal closed first) are not kept for long.
+find "$HOME/.claude/cctokmon-launch" -maxdepth 1 -type f -name '*.txt' -mmin +1440 -delete 2>/dev/null || true
 
-folder=${PWD##*/}
-name=${worktree:-${folder:-session}}
-
-# A prompt file is read and deleted before claude starts, so it is never left behind or reused.
+# A prompt file is read and deleted before anything below can exit, so it is never left behind or reused.
+# A file that cannot be deleted is a warning: the prompt is already read, and stopping would lose it.
 prompt=""
 if [[ -n "$prompt_file" ]]; then
     [[ -f "$prompt_file" ]] || { printf 'tm: prompt file not found: %s\n' "$prompt_file" >&2; exit 1; }
     prompt=$(<"$prompt_file") || { printf 'tm: cannot read prompt file: %s\n' "$prompt_file" >&2; exit 1; }
-    rm -f -- "$prompt_file" || { printf 'tm: cannot delete prompt file: %s\n' "$prompt_file" >&2; exit 1; }
+    rm -f -- "$prompt_file" || printf 'tm: warning: cannot delete prompt file: %s\n' "$prompt_file" >&2
 elif [[ ${#prompt_words[@]} -gt 0 ]]; then
     prompt="${prompt_words[*]}"
 fi
+
+command -v claude >/dev/null 2>&1 || { printf 'tm: claude not found in PATH\n' >&2; exit 1; }
+
+folder=${PWD##*/}
+name=${worktree:-${folder:-session}}
 
 export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
 

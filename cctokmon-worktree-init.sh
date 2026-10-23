@@ -32,8 +32,11 @@ status=$(git -C "$cwd" submodule status 2>/dev/null) || exit 0
 grep -q '^-' <<<"$status" || exit 0
 
 printf 'cctokmon: initialising submodules in %s\n' "$cwd"
-# A credential prompt would hang until the hook times out, and nothing can answer it
-if ! GIT_TERMINAL_PROMPT=0 git -C "$cwd" submodule update --init --recursive; then
+# Nothing can answer a prompt, so one would hang until the hook times out: git's own, the credential
+# manager's, and ssh's (host key or password), the last kept on top of any ssh command already configured
+ssh_command=${GIT_SSH_COMMAND:-$(git -C "$cwd" config core.sshCommand || echo ssh)}
+if ! GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_SSH_COMMAND="$ssh_command -o BatchMode=yes" \
+    git -C "$cwd" submodule update --init --recursive </dev/null; then
     printf 'cctokmon: submodule update failed in %s\n' "$cwd"
 fi
 
