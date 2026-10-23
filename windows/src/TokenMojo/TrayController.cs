@@ -40,7 +40,7 @@ internal sealed class TrayController : IDisposable
 
     public TrayController()
     {
-        _locator = new ClaudeDirLocator(_windowsHome, _wsl, Environment.GetEnvironmentVariable);
+        _locator = new ClaudeDirLocator(_windowsHome, _wsl, new WslAccounts(), Environment.GetEnvironmentVariable);
         _flyout.PopOutRequested += (_, _) => ShowPopOut();
         _flyout.NewSessionRequested += (_, _) => ShowLauncher();
 

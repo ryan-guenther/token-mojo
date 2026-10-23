@@ -4,19 +4,29 @@ namespace TokenMojo.Core;
 
 /// <param name="Worktree">A name for `claude -w`; null starts in the folder itself.</param>
 /// <param name="Prompt">Sent to Claude unchanged; blank sends nothing.</param>
-public sealed record LaunchRequest(string Distro, string User, string Folder, string? Worktree, string Prompt);
+/// <param name="Home">The user's home folder, which a folder written with a tilde is relative to.</param>
+public sealed record LaunchRequest(string Distro, string User, string Folder, string? Worktree, string Prompt, string? Home = null);
+
+/// <summary>Puts a prompt file where the launch user's `tm` will read it, as that user.</summary>
+public interface IPromptHandoff
+{
+    /// <exception cref="IOException">The file could not be created.</exception>
+    void Deposit(string distro, string user, Guid id, string prompt);
+
+    /// <exception cref="IOException">The file could not be removed.</exception>
+    void Discard(string distro, string user, Guid id);
+}
 
 public static class SessionLauncher
 {
-    /// <summary>Writes the prompt file, then hands the terminal command to <paramref name="start"/>.</summary>
-    /// <param name="promptDirectory">The distro share folder the prompt file goes in, which `tm` reads it from.</param>
+    /// <summary>Deposits the prompt file, then hands the terminal command to <paramref name="start"/>.</summary>
     /// <param name="start">Opens the terminal; whatever it throws is rethrown after the prompt file is removed.</param>
-    public static void Launch(LaunchRequest request, string promptDirectory, Action<TerminalCommand> start)
+    public static void Launch(LaunchRequest request, IPromptHandoff handoff, Action<TerminalCommand> start)
     {
         Guid? promptId = string.IsNullOrWhiteSpace(request.Prompt) ? null : Guid.NewGuid();
         // Built first, so a request that would be refused leaves no file behind.
         LaunchCommand command = LaunchCommand.Build(request.Distro, request.User, request.Folder, request.Worktree, promptId);
-        string? promptFile = promptId is { } id ? LaunchPrompt.Write(promptDirectory, id, request.Prompt) : null;
+        if (promptId is { } id) Deposit(handoff, request, id);
         bool started = false;
         try
         {
@@ -26,20 +36,34 @@ public static class SessionLauncher
         finally
         {
             // Once started, tm owns the file and deletes it.
-            if (!started && promptFile is not null) TryDelete(promptFile);
+            if (!started && promptId is { } unread) TryDiscard(handoff, request, unread);
+        }
+    }
+
+    // A deposit that failed midway may have left part of the file.
+    private static void Deposit(IPromptHandoff handoff, LaunchRequest request, Guid id)
+    {
+        try
+        {
+            handoff.Deposit(request.Distro, request.User, id, request.Prompt);
+        }
+        catch (IOException)
+        {
+            TryDiscard(handoff, request, id);
+            throw;
         }
     }
 
     // The failure being reported is the one that stopped the launch, so one while cleaning up must not replace it.
-    private static void TryDelete(string promptFile)
+    private static void TryDiscard(IPromptHandoff handoff, LaunchRequest request, Guid id)
     {
         try
         {
-            LaunchPrompt.Delete(promptFile);
+            handoff.Discard(request.Distro, request.User, id);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (IOException e)
         {
-            Trace.TraceWarning("TokenMojo: cannot delete prompt file {0}: {1}", promptFile, e.Message);
+            Trace.TraceWarning("TokenMojo: cannot remove prompt file {0} in {1}: {2}", id, request.Distro, e.Message);
         }
     }
 }

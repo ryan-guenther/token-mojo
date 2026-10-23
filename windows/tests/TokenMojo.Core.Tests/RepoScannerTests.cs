@@ -176,13 +176,13 @@ public sealed class RepoScannerTests : IDisposable
     public void Scan_DistroIsNotThere_ReturnsNothingInsteadOfThrowing()
     {
         // Act
-        IReadOnlyList<RepoInfo> repos = RepoScanner.Scan("Gone", "alice", ["~"], _temp.Path);
+        IReadOnlyList<RepoInfo> repos = RepoScanner.Scan("Gone", "/home/alice", ["~"], _temp.Path);
 
         // Assert
         Assert.Empty(repos);
     }
 
-    private IReadOnlyList<RepoInfo> Scan(IReadOnlyList<string> roots) => RepoScanner.Scan("Ubuntu", "alice", roots, _temp.Path);
+    private IReadOnlyList<RepoInfo> Scan(IReadOnlyList<string> roots) => RepoScanner.Scan("Ubuntu", "/home/alice", roots, _temp.Path);
 
     private string MakeRepo(string relativePath, string config)
     {

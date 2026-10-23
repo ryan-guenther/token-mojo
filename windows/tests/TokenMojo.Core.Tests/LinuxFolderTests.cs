@@ -27,29 +27,31 @@ public sealed class LinuxFolderTests
     }
 
     [Theory]
-    [InlineData("~", "alice", "/home/alice")]
-    [InlineData("~/my-app", "alice", "/home/alice/my-app")]
-    [InlineData("~/my-app", "root", "/root/my-app")]
-    [InlineData("/srv/code", "alice", "/srv/code")]
+    [InlineData("~", "/home/alice", "/home/alice")]
+    [InlineData("~/my-app", "/home/alice", "/home/alice/my-app")]
+    [InlineData("~/my-app", "/root", "/root/my-app")]
+    [InlineData("~/my-app", "/home/alice.smith", "/home/alice.smith/my-app")]
+    [InlineData("/srv/code", "/home/alice", "/srv/code")]
     [InlineData("/srv/code", null, "/srv/code")]
     [InlineData("~/my-app", null, null)]
-    public void Expand_TildeFolder_BecomesAnAbsolutePathForTheUser(string folder, string? user, string? expected)
+    public void Expand_TildeFolder_BecomesAnAbsolutePathForTheUser(string folder, string? home, string? expected)
     {
         // Act / Assert
-        Assert.Equal(expected, LinuxFolder.Expand(folder, user));
+        Assert.Equal(expected, LinuxFolder.Expand(folder, home));
     }
 
     [Theory]
-    [InlineData("/home/alice", "alice", "~")]
-    [InlineData("/home/alice/my-app", "alice", "~/my-app")]
-    [InlineData("/home/alicia/my-app", "alice", "/home/alicia/my-app")]
-    [InlineData("/root/my-app", "root", "~/my-app")]
-    [InlineData("/srv/code", "alice", "/srv/code")]
+    [InlineData("/home/alice", "/home/alice", "~")]
+    [InlineData("/home/alice/my-app", "/home/alice", "~/my-app")]
+    [InlineData("/home/alicia/my-app", "/home/alice", "/home/alicia/my-app")]
+    [InlineData("/root/my-app", "/root", "~/my-app")]
+    [InlineData("/home/alice.smith/my-app", "/home/alice.smith", "~/my-app")]
+    [InlineData("/srv/code", "/home/alice", "/srv/code")]
     [InlineData("/home/alice/my-app", null, "/home/alice/my-app")]
-    public void Abbreviate_FolderInTheUsersHome_UsesATilde(string folder, string? user, string expected)
+    public void Abbreviate_FolderInTheUsersHome_UsesATilde(string folder, string? home, string expected)
     {
         // Act / Assert
-        Assert.Equal(expected, LinuxFolder.Abbreviate(folder, user));
+        Assert.Equal(expected, LinuxFolder.Abbreviate(folder, home));
     }
 
     [Theory]

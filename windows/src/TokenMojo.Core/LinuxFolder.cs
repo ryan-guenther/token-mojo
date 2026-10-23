@@ -13,20 +13,19 @@ public static class LinuxFolder
         // A quote or backslash would be read by wt.exe's and wsl.exe's argument parsing before it reaches the shell.
         && !folder.Any(character => char.IsControl(character) || character is '"' or '\\');
 
-    /// <summary>The absolute path of a folder; null when it starts with a tilde and there is no known user.</summary>
-    public static string? Expand(string folder, string? user)
+    /// <summary>The absolute path of a folder; null when it starts with a tilde and there is no known home folder.</summary>
+    public static string? Expand(string folder, string? homeFolder)
     {
         if (folder != Home && !folder.StartsWith("~/", StringComparison.Ordinal)) return folder;
-        return user is null ? null : WslPaths.HomeFolder(user) + folder[Home.Length..];
+        return homeFolder is null ? null : homeFolder + folder[Home.Length..];
     }
 
-    /// <summary>The same folder written with a tilde when it is in the user's home folder.</summary>
-    public static string Abbreviate(string folder, string? user)
+    /// <summary>The same folder written with a tilde when it is in the home folder.</summary>
+    public static string Abbreviate(string folder, string? homeFolder)
     {
-        if (user is null) return folder;
-        string home = WslPaths.HomeFolder(user);
-        if (folder == home) return Home;
-        return folder.StartsWith(home + "/", StringComparison.Ordinal) ? Home + folder[home.Length..] : folder;
+        if (homeFolder is null) return folder;
+        if (folder == homeFolder) return Home;
+        return folder.StartsWith(homeFolder + "/", StringComparison.Ordinal) ? Home + folder[homeFolder.Length..] : folder;
     }
 
     /// <summary>The repository root for a folder inside a worktree that `claude -w` made; other folders as they are.</summary>
