@@ -223,7 +223,7 @@ public partial class LauncherWindow : Window
             string? start = LinuxFolder.Expand(request.Folder, request.Home);
             if (start is null || !Directory.Exists(WslPaths.SharePath(request.Distro, start)))
                 return $"The folder does not exist in {request.Distro}: {request.Folder}";
-            SessionLauncher.Launch(request, LaunchPrompt.DirectoryOnShare(request.Distro, request.User), TerminalProcess.Start);
+            SessionLauncher.Launch(request, new WslPromptHandoff(), TerminalProcess.Start);
             return null;
         }
         catch (Exception e) when (e is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)

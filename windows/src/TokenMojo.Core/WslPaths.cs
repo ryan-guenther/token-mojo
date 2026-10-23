@@ -12,8 +12,6 @@ public static class WslPaths
         return SharePath(distro, $"{home}/.local/bin/tm", shareRoot);
     }
 
-    public static string HomeFolder(string user) => user == "root" ? "/root" : $"/home/{user}";
-
     /// <summary>The Linux path of a folder picked on the distro's share, in either share spelling; null for any other path.</summary>
     public static string? ToLinuxPath(string windowsPath, string distro)
     {

@@ -3,13 +3,9 @@ using TokenMojo.Core;
 
 namespace TokenMojo.Core.Tests;
 
-public sealed class LaunchPromptTests : IDisposable
+public sealed class LaunchPromptTests
 {
     private static readonly Guid PromptId = Guid.Parse("3636af4c-8a5c-4e7f-a26c-739e5f93af06");
-
-    private readonly TempDir _temp = new();
-
-    public void Dispose() => _temp.Dispose();
 
     [Fact]
     public void LinuxPath_IsTheFileTmIsToldToRead()
@@ -19,71 +15,42 @@ public sealed class LaunchPromptTests : IDisposable
     }
 
     [Fact]
-    public void DirectoryOnShare_IsInsideTheUsersClaudeFolder()
+    public void Encode_Prompt_IsUtf8WithoutABomAndWithLineFeeds()
     {
         // Act
-        string directory = LaunchPrompt.DirectoryOnShare("Ubuntu", "alice", @"\\wsl.localhost");
+        byte[] bytes = LaunchPrompt.Encode("first\r\nsecond\rthird\nfourth é");
 
         // Assert
-        Assert.Equal(@"\\wsl.localhost\Ubuntu\home\alice\.claude\cctokmon-launch", directory);
-    }
-
-    [Fact]
-    public void Write_Prompt_IsWrittenAsUtf8WithoutABomAndWithLineFeeds()
-    {
-        // Arrange
-        string directory = Path.Combine(_temp.Path, "cctokmon-launch");
-
-        // Act
-        string file = LaunchPrompt.Write(directory, PromptId, "first\r\nsecond\rthird\nfourth é");
-
-        // Assert
-        byte[] bytes = File.ReadAllBytes(file);
         Assert.NotEqual(0xEF, bytes[0]);
         Assert.Equal("first\nsecond\nthird\nfourth é", new UTF8Encoding(false).GetString(bytes));
-        Assert.Equal(Path.Combine(directory, $"{PromptId}.txt"), file);
     }
 
     [Fact]
-    public void Write_PromptWithShellCharacters_KeepsEveryByte()
+    public void Encode_PromptWithShellCharacters_KeepsEveryByte()
     {
         // Arrange
         string prompt = "say \"hi\"; echo 'there' $HOME `id` $(id) \\n\n  indented\n\nlast";
 
+        // Act / Assert
+        Assert.Equal(prompt, new UTF8Encoding(false).GetString(LaunchPrompt.Encode(prompt)));
+    }
+
+    [Fact]
+    public void DepositScript_ReadsStandardInputIntoTheFileInTheLaunchUsersHome()
+    {
         // Act
-        string file = LaunchPrompt.Write(_temp.Path, PromptId, prompt);
+        string script = LaunchPrompt.DepositScript(PromptId);
 
         // Assert
-        Assert.Equal(prompt, File.ReadAllText(file));
+        Assert.Equal(
+            $"umask 077; mkdir -p \"$HOME/.claude/cctokmon-launch\" && set -C && cat > \"$HOME/.claude/cctokmon-launch/{PromptId}.txt\"",
+            script);
     }
 
     [Fact]
-    public void Write_FileAlreadyThere_Throws()
-    {
-        // Arrange
-        LaunchPrompt.Write(_temp.Path, PromptId, "first");
-
-        // Act / Assert
-        Assert.Throws<IOException>(() => LaunchPrompt.Write(_temp.Path, PromptId, "second"));
-    }
-
-    [Fact]
-    public void Delete_FileThere_RemovesIt()
-    {
-        // Arrange
-        string file = LaunchPrompt.Write(_temp.Path, PromptId, "text");
-
-        // Act
-        LaunchPrompt.Delete(file);
-
-        // Assert
-        Assert.False(File.Exists(file));
-    }
-
-    [Fact]
-    public void Delete_FileAlreadyGone_DoesNothing()
+    public void DiscardScript_RemovesTheFileIfItIsThere()
     {
         // Act / Assert
-        LaunchPrompt.Delete(Path.Combine(_temp.Path, "missing.txt"));
+        Assert.Equal($"rm -f -- \"$HOME/.claude/cctokmon-launch/{PromptId}.txt\"", LaunchPrompt.DiscardScript(PromptId));
     }
 }
