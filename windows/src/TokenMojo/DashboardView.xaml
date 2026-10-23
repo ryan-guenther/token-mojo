@@ -157,7 +157,8 @@
                     <ItemsControl ItemsSource="{Binding Sessions.Rows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border CornerRadius="8" Padding="8,6" Cursor="Hand" MouseLeftButtonUp="OnRowClick">
+                                <Border CornerRadius="8" Padding="8,6" Cursor="Hand"
+                                        MouseLeftButtonDown="OnRowPress" MouseLeftButtonUp="OnRowClick" MouseLeave="OnRowLeave">
                                     <Border.ContextMenu>
                                         <ContextMenu Opened="OnRowMenuOpened">
                                             <MenuItem Header="Focus" Tag="focus" Click="OnRowFocus" />

@@ -6,6 +6,9 @@ namespace TokenMojo;
 
 public partial class DashboardView : UserControl
 {
+    // The row the left button went down on; a click is a press and a release on the same row.
+    private object? _pressedRow;
+
     public DashboardView() => InitializeComponent();
 
     /// <summary>Raised after a session's window was brought forward or its resume was started.</summary>
@@ -25,10 +28,21 @@ public partial class DashboardView : UserControl
         Panel.Visibility = Visibility.Collapsed;
     }
 
+    private void OnRowPress(object sender, RoutedEventArgs e)
+    {
+        _pressedRow = e.OriginalSource is DependencyObject source && IsInsideMenu(source) ? null : sender;
+    }
+
+    // Leaving the row cancels the click, so a stale press cannot pair with a later release.
+    private void OnRowLeave(object sender, RoutedEventArgs e) => _pressedRow = null;
+
     private async void OnRowClick(object sender, RoutedEventArgs e)
     {
-        // A click on the row's context menu bubbles up to the row through the logical tree.
-        if (e.OriginalSource is DependencyObject source && IsInsideMenu(source)) return;
+        bool pressedHere = ReferenceEquals(_pressedRow, sender);
+        _pressedRow = null;
+        // A click on the row's context menu bubbles up to the row through the logical tree. A release with no
+        // press on this row is a click that dismissed the menu, or a drag from another row.
+        if (!pressedHere || e.OriginalSource is DependencyObject source && IsInsideMenu(source)) return;
         if (RowOf(sender) is { } row)
             Acted(await SessionControl.ActivateAsync(SessionTarget.From(row)));
     }

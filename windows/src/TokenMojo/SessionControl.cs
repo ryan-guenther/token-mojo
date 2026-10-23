@@ -22,6 +22,9 @@ internal sealed record SessionTarget(string Id, SessionStatus Status, string? Di
 /// </summary>
 internal static class SessionControl
 {
+    // Sessions with a focus or resume under way, so a second click on the same one is ignored. UI thread only.
+    private static readonly HashSet<string> InFlight = new();
+
     private const string Caption = "TokenMojo";
     private const string ConfirmResumeText =
         "This session looks like it's still running, but its window wasn't found. Resume in a new terminal anyway?";
@@ -29,10 +32,16 @@ internal static class SessionControl
         "This session's terminal window wasn't found. Only sessions started with tm can be focused, and only while their tab is the active one in its window. Resuming works for WSL sessions only.";
     private const string FocusRefusedText =
         "Windows did not allow switching to that window. Switch to it from the taskbar.";
+    private const string TmMissingText =
+        "tm is not installed for that user in {0}, so the session cannot be resumed there. Run install.sh in that distro.";
     private const string WindowGoneText = "That session's terminal window is no longer open.";
 
     /// <summary>The click on a session row. True when a window was brought forward or a resume was started.</summary>
-    public static async Task<bool> ActivateAsync(SessionTarget target)
+    public static Task<bool> ActivateAsync(SessionTarget target) => Guarded(target.Id, () => ActivateUnguardedAsync(target));
+
+    public static Task<bool> ResumeAsync(SessionTarget target) => Guarded(target.Id, () => ResumeUnguardedAsync(target));
+
+    private static async Task<bool> ActivateUnguardedAsync(SessionTarget target)
     {
         TerminalWindow? window = FindWindow(target.Id);
         switch (SessionActions.Decide(target.Status, target.Distro, windowFound: window is not null))
@@ -40,9 +49,9 @@ internal static class SessionControl
             case SessionAction.Focus:
                 return FocusWindow(window!);
             case SessionAction.ConfirmResume:
-                return Confirm(ConfirmResumeText) && await ResumeAsync(target);
+                return Confirm(ConfirmResumeText) && await ResumeUnguardedAsync(target);
             case SessionAction.Resume:
-                return await ResumeAsync(target);
+                return await ResumeUnguardedAsync(target);
             default:
                 Warn(UnavailableText);
                 return false;
@@ -63,9 +72,14 @@ internal static class SessionControl
     public static bool IsForeground(string sessionId) =>
         TerminalWindows.ForegroundTitle() is { } title && SessionWindows.Matches(title, sessionId);
 
-    public static async Task<bool> ResumeAsync(SessionTarget target)
+    private static async Task<bool> ResumeUnguardedAsync(SessionTarget target)
     {
         if (target.Distro is not { } distro) return false;
+        if (await Task.Run(() => TmMissing(distro, target.User)))
+        {
+            Warn(string.Format(TmMissingText, distro));
+            return false;
+        }
         try
         {
             ResumeCommand command = await Task.Run(
@@ -121,6 +135,23 @@ internal static class SessionControl
             Warn($"Could not copy to the clipboard: {e.Message}");
         }
     }
+
+    private static async Task<bool> Guarded(string sessionId, Func<Task<bool>> action)
+    {
+        if (!InFlight.Add(sessionId)) return false;
+        try
+        {
+            return await action();
+        }
+        finally
+        {
+            InFlight.Remove(sessionId);
+        }
+    }
+
+    // Without a known user there is no home folder to look in, so resume is left to fail visibly in the terminal.
+    private static bool TmMissing(string distro, string? user) =>
+        WslPaths.TmInstallPath(distro, user) is { } path && !File.Exists(path);
 
     private static bool FocusWindow(TerminalWindow window)
     {

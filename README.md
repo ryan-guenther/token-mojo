@@ -313,6 +313,7 @@ Limits of click-to-focus and resume:
 
 - Focus works only for sessions started with `tm` (see [Starting sessions with tm](#starting-sessions-with-tm)), and only while that tab is the active tab in its Windows Terminal window, because the window title is the active tab's.
 - Resume is for WSL sessions. A session from the Windows profile can be focused but not resumed.
+- Resume runs as the Linux user whose home folder holds the session's files, so the home folder name is used as the user name. `tm` must be installed there (`install.sh` in that distro); otherwise resume says so.
 - If the session's folder (for example a removed worktree) no longer exists, resume starts in the repository root, or in your home folder when that is gone too.
 
 ### Settings
