@@ -17,8 +17,6 @@ namespace TokenMojo;
 public partial class LauncherWindow : Window
 {
     private const string NoDistroText = "No WSL distro is running. Open one, then reopen this window.";
-    private const string NoUserText =
-        "Could not find a Claude Code folder in {0}. Run install.sh in that distro, then reopen this window.";
     private const string NotOnDistroText =
         "Pick a folder inside {0}. Folders on other drives are not available to sessions started here.";
     private const string FolderInvalidText = "The folder must be ~, a path starting with ~/, or a path starting with /.";
@@ -34,6 +32,10 @@ public partial class LauncherWindow : Window
     private string? _distro;
     private string? _user;
     private string? _home;
+    // Why the launch user is not the distro's default one; shown beside the link hint.
+    private string? _userNote;
+    // The problem with the launch user, shown again when Start is pressed.
+    private string? _userProblem;
     // Set while the code fills in a field, so only the user's own edits mark it as chosen.
     private bool _applying;
     private bool _folderChosen;
@@ -115,14 +117,18 @@ public partial class LauncherWindow : Window
         int generation = ++_generation;
         string distro = _distro!;
         Settings settings = _settings!;
-        ClaudeSource? source = _sources.FirstOrDefault(candidate => string.Equals(candidate.Distro, distro, StringComparison.OrdinalIgnoreCase));
-        string? user = source?.User;
-        string? home = source?.Home;
-        _user = user;
+        IReadOnlyList<ClaudeSource> sources = _sources;
+        // Reads each candidate's tm over the share.
+        LaunchUser choice = await Task.Run(() => LaunchTargets.ChooseUser(sources, distro, source => TmInstall.Inspect(WslPaths.TmInstallPath(distro, source.Home)!)));
+        if (_closed || generation != _generation) return;
+        string? home = choice.Source?.Home;
+        _user = choice.Source?.User;
         _home = home;
+        _userNote = choice.Note;
+        _userProblem = choice.Problem;
         _repos = [];
         HideError();
-        if (user is null) ShowError(string.Format(NoUserText, distro));
+        if (choice.Problem is not null) ShowError(choice.Problem);
         // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
         ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, []));
         ApplyHint();
@@ -156,8 +162,9 @@ public partial class LauncherWindow : Window
     {
         if (_settings is null) return;
         LaunchHint hint = LaunchHints.From(PromptBox.Text, _settings, _repos);
-        HintText.Text = hint.Description;
-        HintText.Visibility = hint.Description is null ? Visibility.Collapsed : Visibility.Visible;
+        string[] lines = new[] { hint.Description, _userNote }.OfType<string>().ToArray();
+        HintText.Text = string.Join("\n", lines);
+        HintText.Visibility = lines.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _applying = true;
         if (!_folderChosen)
             FolderBox.Text = hint.Folder is { } folder ? LinuxFolder.Abbreviate(folder, _home) : _settings.DefaultFolder;
@@ -188,7 +195,7 @@ public partial class LauncherWindow : Window
         }
         if (_user is not { } user)
         {
-            ShowError(string.Format(NoUserText, distro));
+            ShowError(_userProblem ?? "No user to start the session as.");
             return;
         }
         LaunchRequest request = new(distro, user, folder, worktree, PromptBox.Text, _home);
@@ -211,8 +218,8 @@ public partial class LauncherWindow : Window
     {
         try
         {
-            if (SessionControl.TmMissing(request.Distro, request.Home))
-                return SessionControl.TmMissingMessage(request.Distro, request.User);
+            // Checked again: it was inspected when the window opened, which may be a while ago.
+            if (SessionControl.TmProblem(request.Distro, request.User, request.Home) is { } problem) return problem;
             string? start = LinuxFolder.Expand(request.Folder, request.Home);
             if (start is null || !Directory.Exists(WslPaths.SharePath(request.Distro, start)))
                 return $"The folder does not exist in {request.Distro}: {request.Folder}";

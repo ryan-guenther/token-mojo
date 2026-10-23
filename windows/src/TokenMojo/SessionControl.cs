@@ -32,8 +32,6 @@ internal static class SessionControl
         "This session's terminal window wasn't found. Only sessions started with tm can be focused, and only while their tab is the active one in its window. Resuming works for WSL sessions only.";
     private const string FocusRefusedText =
         "Windows did not allow switching to that window. Switch to it from the taskbar.";
-    private const string TmMissingText =
-        "Could not find tm for {0} in {1}. Run install.sh in that distro, or try again if the distro was just starting.";
     private const string WindowGoneText = "That session's terminal window is no longer open.";
 
     /// <summary>The click on a session row. True when a window was brought forward or a resume was started.</summary>
@@ -75,9 +73,9 @@ internal static class SessionControl
     private static async Task<bool> ResumeUnguardedAsync(SessionTarget target)
     {
         if (target.Distro is not { } distro) return false;
-        if (await Task.Run(() => TmMissing(distro, target.Home)))
+        if (await Task.Run(() => TmProblem(distro, target.User ?? "", target.Home)) is { } problem)
         {
-            Warn(TmMissingMessage(distro, target.User));
+            Warn(problem);
             return false;
         }
         try
@@ -146,11 +144,13 @@ internal static class SessionControl
         }
     }
 
-    // Without a known user there is no home folder to look in, so resume is left to fail visibly in the terminal.
-    internal static bool TmMissing(string distro, string? home) =>
-        WslPaths.TmInstallPath(distro, home) is { } path && !File.Exists(path);
-
-    internal static string TmMissingMessage(string distro, string? user) => string.Format(TmMissingText, user, distro);
+    /// <summary>Why `tm` must not be run for the user, or null when it is cctokmon's. Reads the distro share, so off the UI thread.</summary>
+    internal static string? TmProblem(string distro, string user, string? home)
+    {
+        // Without a known home folder there is nowhere to look, so the launch is left to fail visibly in the terminal.
+        if (WslPaths.TmInstallPath(distro, home) is not { } path) return null;
+        return TmInstall.ProblemText(TmInstall.Inspect(path), user, distro, home!);
+    }
 
     private static bool FocusWindow(TerminalWindow window)
     {
