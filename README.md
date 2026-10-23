@@ -110,6 +110,8 @@ If `~/.local/bin` is not in your PATH, add this to your `~/.bashrc` or `~/.zshrc
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
+Each prompt shows its default as the capital letter in `[Y/n]` or `[y/N]`. When there is no one to answer (input closed, for example `bash install.sh </dev/null`), the installer takes the default and carries on. Changes to `~/.claude/settings.json` are written through a temp file next to it, so the file's permissions are kept, a symlinked `settings.json` stays a symlink (the real file behind it is updated), and a failed edit leaves the original untouched.
+
 ---
 
 ## Usage

@@ -59,6 +59,15 @@ write_settings() {
     return 1
 }
 
+# Reads a prompt's answer into ans. End of input (no terminal, stdin closed) leaves ans empty, so the
+# prompt's own default applies instead of `read` failing under set -e. A partial last line is kept.
+read_answer() {
+    ans=""
+    if ! read -r ans && [[ -z "$ans" ]]; then
+        printf '\n'
+    fi
+}
+
 printf '\n%scctokmon uninstaller%s\n%s\n\n' "${BOLD}" "${R}" "────────────────────"
 
 # Remove our hook entries from settings.json first, keeping everyone else's. A settings file jq cannot
@@ -169,7 +178,7 @@ fi
 # Ask about config
 if [[ -d "$HOME/.config/cctokmon" ]]; then
     printf 'Remove config dir ~/.config/cctokmon? [y/N] '
-    read -r ans
+    read_answer
     if [[ "${ans,,}" == "y" ]]; then
         rm -rf "$HOME/.config/cctokmon"
         ok "Removed: ~/.config/cctokmon"

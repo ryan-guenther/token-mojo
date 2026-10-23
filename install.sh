@@ -81,6 +81,15 @@ write_settings() {
     return 1
 }
 
+# Reads a prompt's answer into ans. End of input (no terminal, stdin closed) leaves ans empty, so the
+# prompt's own default applies instead of `read` failing under set -e. A partial last line is kept.
+read_answer() {
+    ans=""
+    if ! read -r ans && [[ -z "$ans" ]]; then
+        printf '\n'
+    fi
+}
+
 # ── Detect OS and package manager ──────────────────────────────────────────────
 OS="$(uname -s)"
 IS_WINDOWS=0
@@ -171,7 +180,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     case "$PKG_MGR" in
         brew)
             printf '  Install with Homebrew (%s)? [Y/n] ' "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: brew install ${PKG_LIST[*]}"; exit 1
             fi
@@ -179,7 +188,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
             ;;
         apt)
             printf '  Install with apt (%s)? [Y/n] ' "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: sudo apt install ${PKG_LIST[*]}"; exit 1
             fi
@@ -187,7 +196,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
             ;;
         dnf|yum)
             printf '  Install with %s (%s)? [Y/n] ' "$PKG_MGR" "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: sudo $PKG_MGR install ${PKG_LIST[*]}"; exit 1
             fi
@@ -195,7 +204,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
             ;;
         winget)
             printf '  Install with winget (%s)? [Y/n] ' "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: winget install --exact --id ${PKG_LIST[*]}"; exit 1
             fi
@@ -298,7 +307,7 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     if [[ -n "$existing_sl" ]]; then
         warn "A statusLine is already configured: ${existing_sl}"
         printf '  Overwrite with cctokmon? [y/N] '
-        read -r ans
+        read_answer
         if [[ "${ans,,}" != "y" ]]; then
             info "Skipped. To configure manually:"
             info "  Set \"statusLine\": \"${STATUSLINE_DEST}\" in ~/.claude/settings.json"
@@ -308,13 +317,13 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
         fi
     else
         printf '  Configure now? [Y/n] '
-        read -r ans
+        read_answer
         configure_sl=1
         [[ "${ans,,}" == "n" ]] && configure_sl=0
     fi
 else
     printf '  Configure now? [Y/n] '
-    read -r ans
+    read_answer
     configure_sl=1
     [[ "${ans,,}" == "n" ]] && configure_sl=0
 fi
@@ -357,7 +366,7 @@ if [[ "$hooks_registered" -eq 8 && "$worktree_init_registered" == "true" ]]; the
     ok "Hooks already registered in ${SETTINGS_FILE}"
 else
     printf '  Register now? [Y/n] '
-    read -r ans
+    read_answer
     configure_hooks=1
     [[ "${ans,,}" == "n" ]] && configure_hooks=0
 fi
