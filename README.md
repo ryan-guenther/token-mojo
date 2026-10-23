@@ -246,19 +246,18 @@ mkdir -p ~/.config/git && echo '.claude/worktrees/' >> ~/.config/git/ignore
 | Event | Status |
 |---|---|
 | `SessionStart` (except after a compact), `Stop` | ready |
-| `Stop` while a subagent is still running | working, then ready when the last `SubagentStop` arrives |
 | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | working |
-| `SubagentStart`, `SubagentStop` | counted, to tell whether a `Stop` ends the turn |
+| `SubagentStart`, `SubagentStop`, and any event from a subagent | keep the session working after the main agent's `Stop`, until the last subagent is done |
 | `Notification` for a permission prompt or other question | needs input |
 | `SessionEnd` | ended |
 
 The hook never prints anything and always exits 0, so it cannot interrupt a session. Restart running sessions after registering it. The Windows app uses these files; the macOS app and `cctokmon` do not.
 
-A background subagent keeps working after the main agent's `Stop`, and long model calls fire no events, so the session stays "working" (the row says how many subagents) until the last one stops. The "Finished" alert then fires at that moment, measured from the start of the turn. Re-running the installer adds the two subagent events to an install that has the original eight.
+A background subagent keeps working after the main agent's `Stop`, and long model calls fire no events. The main agent's own events set its state; subagents (events with an agent id) never start or extend a turn. While the main agent is ready and a subagent is live, the row shows "working" and says how many subagents. A subagent is live from its first event until its `SubagentStop`, and any event it sends (including its tool calls) refreshes it. A subagent that sends nothing for 10 minutes is treated as finished, so a lost `SubagentStop` cannot pin the session. The "Finished" alert fires when the row goes back to ready, measured from the start of the main agent's turn. Re-running the installer adds the two subagent events to an install that has the original eight.
 
-Needs input clears when the main agent next starts or finishes a tool, which is what follows an approval or a denial. A subagent starting a tool does not clear it. A session that has ended stays ended until it starts again, and a prompt alone does not revive it.
+Needs input clears when the main agent next starts or finishes a tool, which is what follows an approval or a denial. A subagent starting a tool does not clear it, but a subagent finishing one does, since that means the prompt was answered. A session that has ended stays ended until it starts again, and a prompt alone does not revive it.
 
-Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt, and that prompt continues the old turn's timer: a short reply after a long idle gap can raise a "Finished" alert. A subagent that crashes without a `SubagentStop` keeps the session "working" until its next `SessionStart` or `SessionEnd`. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
+Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt, and that prompt continues the old turn's timer: a short reply after a long idle gap can raise a "Finished" alert. A subagent that crashes without a `SubagentStop` keeps the row "working" for at most 10 minutes after its last event. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
 
 ---
 
