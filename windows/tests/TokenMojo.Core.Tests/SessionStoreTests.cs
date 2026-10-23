@@ -135,32 +135,34 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
-    public void LoadSessions_UndecodableStatusFile_HasNoStatusButKeepsTheSession()
+    public void LoadSessions_UndecodableStatusFile_SkipsTheSessionForThisRefresh()
     {
         // Arrange
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
         _temp.Write("win/cctokmon-sessions/a.status", "not json", Now);
+        _temp.Write("win/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win")], Now);
 
         // Assert
-        Assert.Equal(SessionStatus.None, session.Status);
+        Assert.Equal(["b"], sessions.Select(s => s.Id));
     }
 
     [Fact]
-    public void LoadSessions_UnreadableStatusFile_HasNoStatusButKeepsTheSession()
+    public void LoadSessions_UnreadableStatusFile_SkipsTheSessionForThisRefresh()
     {
         // Arrange
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
         string locked = _temp.Write("win/cctokmon-sessions/a.status", """{"status":"ready","since":1,"turn_started":null}""", Now);
+        _temp.Write("win/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now);
         using IDisposable denied = TempDir.DenyRead(locked);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win")], Now);
 
         // Assert
-        Assert.Equal(SessionStatus.None, session.Status);
+        Assert.Equal(["b"], sessions.Select(s => s.Id));
     }
 
     [Fact]

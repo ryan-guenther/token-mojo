@@ -44,6 +44,8 @@ public class SessionStatusFileTests
     [InlineData("""{"status":"napping","since":1000,"turn_started":null}""")]
     [InlineData("""{"since":1000,"turn_started":null}""")]
     [InlineData("""{"status":"ready","turn_started":null}""")]
+    [InlineData("""{"status":"ready","since":99999999999999,"turn_started":null}""")]
+    [InlineData("""{"status":"working","since":1000,"turn_started":-99999999999999}""")]
     [InlineData("not json")]
     [InlineData("null")]
     public void Parse_UnknownOrIncompleteContent_ThrowsJsonException(string json)

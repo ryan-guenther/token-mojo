@@ -129,7 +129,7 @@ public static class Dashboard
         _ => 4,
     };
 
-    // Sessions without hooks keep the 10-minute rule the Mac app uses.
+    // A session with no status file falls back to activity in the last 10 minutes.
     private static string StatusText(SessionSnapshot session, DateTimeOffset now) => session.Status switch
     {
         SessionStatus.NeedsInput => "Needs input",

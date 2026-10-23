@@ -48,6 +48,20 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(30), settings.LongTurn);
     }
 
+    [Fact]
+    public void Load_UnreadableFile_ThrowsNamingTheFile()
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", """{"longTurnSeconds": 90}""", DateTimeOffset.UtcNow);
+        using IDisposable denied = TempDir.DenyRead(path);
+
+        // Act
+        SettingsException error = Assert.Throws<SettingsException>(() => Settings.Load(path));
+
+        // Assert
+        Assert.Contains(path, error.Message);
+    }
+
     [Theory]
     [InlineData("{ not json")]
     [InlineData("")]

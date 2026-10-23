@@ -21,10 +21,19 @@ public sealed record SessionStatusFile(SessionStatus Status, DateTimeOffset Sinc
             _ => throw new JsonException($"Unknown session status '{payload.Status}'"),
         };
         long since = payload.Since ?? throw new JsonException("Status file has no 'since'");
-        return new SessionStatusFile(
-            status,
-            DateTimeOffset.FromUnixTimeSeconds(since),
-            payload.TurnStarted is { } started ? DateTimeOffset.FromUnixTimeSeconds(started) : null);
+        return new SessionStatusFile(status, FromEpoch(since), payload.TurnStarted is { } started ? FromEpoch(started) : null);
+    }
+
+    private static DateTimeOffset FromEpoch(long seconds)
+    {
+        try
+        {
+            return DateTimeOffset.FromUnixTimeSeconds(seconds);
+        }
+        catch (ArgumentOutOfRangeException e)
+        {
+            throw new JsonException($"Epoch seconds {seconds} are out of range", e);
+        }
     }
 
     private sealed record Payload(string? Status, long? Since, long? TurnStarted);

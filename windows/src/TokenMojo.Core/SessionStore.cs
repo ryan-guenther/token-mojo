@@ -13,7 +13,7 @@ public sealed record LoadedState(BridgeState State, DateTimeOffset Updated, Clau
 
 public static class SessionStore
 {
-    private static readonly TimeSpan RecentWindow = TimeSpan.FromHours(12);
+    public static readonly TimeSpan RecentWindow = TimeSpan.FromHours(12);
 
     /// <summary>The newest state file across sources; rate limits are per account, so the latest write wins.</summary>
     public static LoadedState? LoadCurrent(IEnumerable<ClaudeSource> sources)
@@ -53,7 +53,8 @@ public static class SessionStore
                 DateTimeOffset updated = new(file.LastWriteTimeUtc);
                 if (updated <= cutoff) continue;
                 if (TryRead(file) is not { } state) continue;
-                SessionStatusFile? status = TryReadStatus(file);
+                // A status file that is there but unreadable is caught mid-replace, like the bridge file: skip until next refresh.
+                if (!TryReadStatus(file, out SessionStatusFile? status)) continue;
                 sessions.Add(new SessionSnapshot(
                     Path.GetFileNameWithoutExtension(file.Name), state, updated,
                     status?.Status ?? SessionStatus.None, status?.Since, status?.TurnStarted));
@@ -81,16 +82,21 @@ public static class SessionStore
         }
     }
 
-    // The hook script writes <id>.status beside <id>.json; a session without hooks, or with a bad file, has no status.
-    private static SessionStatusFile? TryReadStatus(FileInfo sessionFile)
+    // The hook script writes <id>.status beside <id>.json. No file means a session without hooks (null status);
+    // false means the file exists but could not be read or decoded.
+    private static bool TryReadStatus(FileInfo sessionFile, out SessionStatusFile? status)
     {
+        status = null;
+        string path = Path.ChangeExtension(sessionFile.FullName, ".status");
+        if (!File.Exists(path)) return true;
         try
         {
-            return SessionStatusFile.Parse(ReadShared(Path.ChangeExtension(sessionFile.FullName, ".status")));
+            status = SessionStatusFile.Parse(ReadShared(path));
+            return true;
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
-            return null;
+            return false;
         }
     }
 
