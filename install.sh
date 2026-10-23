@@ -11,7 +11,7 @@ CONFIG_DIR="$HOME/.config/cctokmon"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
-HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","Notification","Stop","SessionEnd"]'
+HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","Notification","Stop","SessionEnd"]'
 
 # ── Colors ─────────────────────────────────────────────────────────────────────
 if tput colors &>/dev/null 2>&1 && [[ "$(tput colors)" -ge 8 ]]; then
@@ -265,7 +265,7 @@ fi
 
 printf '\n%sRegister Claude Code session status hooks?%s\n' "${BOLD}" "${R}"
 printf 'This lets TokenMojo show which sessions are working, ready or need input.\n'
-printf 'It adds an entry for each of 6 events to "hooks" in ~/.claude/settings.json\n'
+printf 'It adds an entry for each of 7 events to "hooks" in ~/.claude/settings.json\n'
 printf 'and leaves your existing hooks alone.\n\n'
 
 configure_hooks=0
@@ -275,7 +275,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
         [$events[] as $e | select([.hooks[$e][]?.hooks[]?.command] | index($cmd))] | length
     ' "$SETTINGS_FILE" 2>/dev/null || echo 0)
 fi
-if [[ "$hooks_registered" -eq 6 ]]; then
+if [[ "$hooks_registered" -eq 7 ]]; then
     ok "Hooks already registered in ${SETTINGS_FILE}"
 else
     printf '  Register now? [Y/n] '

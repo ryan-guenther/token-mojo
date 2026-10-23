@@ -8,7 +8,7 @@ CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
-HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","Notification","Stop","SessionEnd"]'
+HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","Notification","Stop","SessionEnd"]'
 STATE_FILE="$CLAUDE_DIR/cctokmon-state.json"
 SESSIONS_DIR="$CLAUDE_DIR/cctokmon-sessions"
 
