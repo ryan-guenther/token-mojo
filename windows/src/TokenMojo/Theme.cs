@@ -41,6 +41,8 @@ internal static class Theme
         resources["IdleDotBrush"] = Frozen(WithAlpha(ink, 0x66));
         resources["CurrentRowBrush"] = Frozen(WithAlpha(SystemParameters.WindowGlassColor, 0x26));
         resources["OkBrush"] = Ok;
+        resources["TealBrush"] = Teal;
+        resources["CriticalBrush"] = Critical;
     }
 
     private static bool ReadPersonalize(string valueName)

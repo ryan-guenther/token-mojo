@@ -7,6 +7,10 @@ BIN_DIR="$HOME/.local/bin"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
+HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
+# Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
+HOOK_COMMAND="\"$HOOK_DEST\""
+HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","PostToolUseFailure","Notification","Stop","SessionEnd"]'
 STATE_FILE="$CLAUDE_DIR/cctokmon-state.json"
 SESSIONS_DIR="$CLAUDE_DIR/cctokmon-sessions"
 
@@ -22,6 +26,49 @@ warn() { printf '%s⚠%s  %s\n' "${YELLOW}" "${R}" "$*"; }
 
 printf '\n%scctokmon uninstaller%s\n%s\n\n' "${BOLD}" "${R}" "────────────────────"
 
+# Remove our hook entries from settings.json first, keeping everyone else's. A settings file jq cannot
+# process stops the uninstall here, with the file and the hook script both left as they are. Without
+# jq the entries cannot be checked, so the script stays too: they must never point at a missing file.
+keep_hook_script=0
+if [[ -f "$SETTINGS_FILE" ]] && ! command -v jq >/dev/null 2>&1; then
+    warn "jq not found, so ${SETTINGS_FILE} was not checked for cctokmon hooks; keeping ${HOOK_DEST}."
+    printf '  Remove its entries from %s by hand, then delete the script.\n' "$SETTINGS_FILE"
+    keep_hook_script=1
+fi
+if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    jq_error=$(mktemp)
+    if ! has_hooks=$(jq -r --arg cmd "$HOOK_COMMAND" '[.hooks[]?[]?.hooks[]?.command] | index($cmd) != null' "$SETTINGS_FILE" 2>"$jq_error"); then
+        printf 'Cannot process %s, so nothing was removed:\n' "$SETTINGS_FILE" >&2
+        cat "$jq_error" >&2
+        rm -f "$jq_error"
+        exit 1
+    fi
+    # A native jq.exe under Git Bash ends its lines with CRLF
+    has_hooks=${has_hooks%$'\r'}
+    if [[ "$has_hooks" == "true" ]]; then
+        local_tmp=$(mktemp)
+        if ! jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" '
+            reduce $events[] as $e (.;
+                if .hooks[$e] == null then .
+                else .hooks[$e] |= [.[]
+                    | (any(.hooks[]?; .command == $cmd)) as $ours
+                    | if $ours then .hooks |= map(select(.command != $cmd)) else . end
+                    | select(($ours | not) or (.hooks | length) > 0)]
+                end
+                | if .hooks[$e] == [] then del(.hooks[$e]) else . end)
+            | if .hooks == {} then del(.hooks) else . end
+        ' "$SETTINGS_FILE" > "$local_tmp" 2>"$jq_error"; then
+            printf 'Cannot process %s, so nothing was removed:\n' "$SETTINGS_FILE" >&2
+            cat "$jq_error" >&2
+            rm -f "$jq_error" "$local_tmp"
+            exit 1
+        fi
+        mv "$local_tmp" "$SETTINGS_FILE"
+        ok "Removed session status hooks from ${SETTINGS_FILE}"
+    fi
+    rm -f "$jq_error"
+fi
+
 # Remove symlink, or the launcher install.sh writes on Windows
 if [[ -L "${BIN_DIR}/cctokmon" ]] || grep -qx '# cctokmon launcher' "${BIN_DIR}/cctokmon" 2>/dev/null; then
     rm "${BIN_DIR}/cctokmon"
@@ -32,6 +79,12 @@ fi
 if [[ -f "$STATUSLINE_DEST" ]]; then
     rm "$STATUSLINE_DEST"
     ok "Removed: ${STATUSLINE_DEST}"
+fi
+
+# Remove session status hook script
+if [[ -f "$HOOK_DEST" && "$keep_hook_script" -eq 0 ]]; then
+    rm "$HOOK_DEST"
+    ok "Removed: ${HOOK_DEST}"
 fi
 
 # Remove state file

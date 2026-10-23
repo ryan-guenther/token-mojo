@@ -13,6 +13,7 @@ public sealed record DashboardModel(
     string InputTokensText,
     string OutputTokensText,
     SessionListModel? Sessions,
+    int WaitingCount,
     string UpdatedText);
 
 public sealed record LimitRingModel(string Title, double RingPercent, string PercentText, Severity Severity, string ResetText);
@@ -22,8 +23,8 @@ public sealed record ContextModel(double BarPercent, string Text, Severity Sever
 public sealed record SessionListModel(string Summary, IReadOnlyList<SessionRowModel> Rows);
 
 public sealed record SessionRowModel(
-    string Title, string Detail, string CostText, double ContextBarPercent, string ContextText,
-    Severity ContextSeverity, bool IsActive, bool IsCurrent);
+    string Id, string Title, string Detail, string CostText, double ContextBarPercent, string ContextText,
+    Severity ContextSeverity, SessionStatus Status, string StatusText, bool IsActive, bool IsCurrent);
 
 /// <summary>Everything the dashboard shows, formatted as DashboardPanel in menubar/TokenMojo.swift formats it.</summary>
 public static class Dashboard
@@ -49,8 +50,12 @@ public static class Dashboard
             $"{state.ContextWindow?.TotalInputTokens ?? 0:N0}",
             $"{state.ContextWindow?.TotalOutputTokens ?? 0:N0}",
             sessions.Count > 0 ? SessionList(sessions, state.SessionId, now) : null,
+            sessions.Count(s => s.Status is SessionStatus.NeedsInput or SessionStatus.Ready),
             $"Updated {RelativeAge(now - current.Updated, abbreviated: false)}");
     }
+
+    public static string SessionTitle(BridgeState state) =>
+        state.SessionName ?? (state.Workspace?.CurrentDir is { } dir ? Gauges.FolderName(dir) : null) ?? "Session";
 
     // Mirrors RelativeDateTimeFormatter's English wording, full and abbreviated.
     public static string RelativeAge(TimeSpan age, bool abbreviated)
@@ -90,24 +95,49 @@ public static class Dashboard
     private static SessionListModel SessionList(IReadOnlyList<SessionSnapshot> sessions, string? currentId, DateTimeOffset now)
     {
         double totalCost = sessions.Sum(s => s.State.Cost?.TotalCostUsd ?? 0);
-        List<SessionRowModel> rows = sessions.Take(MaxSessionRows).Select(session =>
+        List<SessionRowModel> rows = sessions
+            .OrderBy(session => ListGroup(session.Status))
+            .ThenByDescending(session => session.Updated)
+            .Take(MaxSessionRows).Select(session =>
         {
             BridgeState state = session.State;
             string? folder = state.Workspace?.CurrentDir is { } dir ? Gauges.FolderName(dir) : null;
             double context = state.ContextWindow?.UsedPercentage ?? 0;
             string?[] details = [folder, state.Model?.DisplayName, RelativeAge(now - session.Updated, abbreviated: true)];
             return new SessionRowModel(
-                state.SessionName ?? folder ?? "Session",
+                session.Id,
+                SessionTitle(state),
                 string.Join(" · ", details.OfType<string>()),
                 Gauges.CostText(state.Cost?.TotalCostUsd, 2),
                 Math.Min(context, 100),
                 Gauges.PercentText(context),
                 Gauges.SeverityOf(context),
-                session.IsActive(now),
+                session.Status,
+                StatusText(session, now),
+                session.Status == SessionStatus.None && session.IsActive(now),
                 session.Id == currentId);
         }).ToList();
         return new SessionListModel($"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", rows);
     }
+
+    private static int ListGroup(SessionStatus status) => status switch
+    {
+        SessionStatus.NeedsInput => 0,
+        SessionStatus.Ready => 1,
+        SessionStatus.Working => 2,
+        SessionStatus.None => 3,
+        _ => 4,
+    };
+
+    // A session with no status file falls back to activity in the last 10 minutes.
+    private static string StatusText(SessionSnapshot session, DateTimeOffset now) => session.Status switch
+    {
+        SessionStatus.NeedsInput => "Needs input",
+        SessionStatus.Ready => "Ready",
+        SessionStatus.Working => "Working",
+        SessionStatus.Ended => "Ended",
+        _ => session.IsActive(now) ? "Active in the last 10 minutes" : "Idle",
+    };
 
     private static string AbbreviateHome(string directory, string windowsHome)
     {

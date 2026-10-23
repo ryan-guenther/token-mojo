@@ -178,11 +178,19 @@
                                             <Ellipse.Style>
                                                 <Style TargetType="Ellipse">
                                                     <Setter Property="Fill" Value="{DynamicResource IdleDotBrush}" />
-                                                    <Setter Property="ToolTip" Value="Idle" />
+                                                    <Setter Property="ToolTip" Value="{Binding StatusText}" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsActive}" Value="True">
                                                             <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
-                                                            <Setter Property="ToolTip" Value="Active in the last 10 minutes" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Status}" Value="Working">
+                                                            <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Status}" Value="Ready">
+                                                            <Setter Property="Fill" Value="{DynamicResource TealBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Status}" Value="NeedsInput">
+                                                            <Setter Property="Fill" Value="{DynamicResource CriticalBrush}" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>

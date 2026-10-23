@@ -15,7 +15,8 @@ TokenMojo is the GUI on top of the same bridge files: a macOS menu bar app (`men
 ```
 cctokmon.sh              # Main monitor — entry point
 cctokmon-statusline.sh   # Companion statusline script (called by Claude Code on every interaction)
-install.sh               # Installer: deps check, symlink, statusline config
+cctokmon-hook.sh         # Claude Code hook (called on session events) that appends each session's events to a log
+install.sh               # Installer: deps check, symlink, statusline and hook config
 uninstall.sh             # Clean removal
 config.example           # Config template copied to ~/.config/cctokmon/config on install
 CLAUDE.md                # This file
@@ -82,6 +83,15 @@ bash windows/build.sh [target-dir]
 - On Windows only jq needs installing (Git Bash ships tput and awk); winget's links dir is added to `PATH` for the re-verify, since the running shell predates it.
 - Copies `cctokmon-statusline.sh` to `~/.claude/cctokmon-statusline.sh`.
 - Optionally sets `statusLine` in `~/.claude/settings.json` via `jq`. The correct format is an object: `{"type": "command", "command": "/path/to/script"}` — not a plain string (Claude Code's `/doctor` will flag a plain string as invalid).
+- Copies `cctokmon-hook.sh` to `~/.claude/` and, prompting once, appends `{"hooks":[{"type":"command","command":"<dest>"}]}` to each of `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `Stop` and `SessionEnd` in `settings.json`. Idempotent, and other hooks are left alone. `uninstall.sh` removes only entries whose command is ours.
+
+### Session status hook (`cctokmon-hook.sh`)
+
+- The hook only appends. For each of the eight events it writes one line, `{"t":<epoch>,"e":"<event>"}` plus `"a"` (agent_id), `"n"` (notification_type) or `"s"` (source) when present, to `~/.claude/cctokmon-sessions/<session_id>.events` with a single `>>`, with the same `session_id` guard as the bridge. It takes no lock and reads no earlier state: a read-modify-write file lost events when hooks overlapped. Lines stay far below 4 KB so each append is one write. The `.events` extension keeps it out of the `*.json` scan, and the 7-day cleanup removes old ones.
+- It must never write to stdout (`SessionStart` and `UserPromptSubmit` stdout is added to Claude's context) and must always exit 0. Nothing from prompts or tool input is logged.
+- The status is worked out by the reader, `SessionEvents.Reduce`, applying lines in order and skipping any that are not complete events. `SessionStart` (not `source` `compact`) → ready; `UserPromptSubmit` → working, starting a turn only from ready or no status (a subagent's result arrives as a second prompt mid-turn, so while working or needing input it keeps the turn start); `PreToolUse` → working, which clears needs input unless it is a subagent's (`a` set), since a denied prompt is followed by the main agent's next tool call; `PostToolUse` and `PostToolUseFailure` → working, clearing needs input whether or not `a` is set; `Notification` with `n` of `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` or `agent_needs_input` → needs input; `Stop` → ready; `SessionEnd` → ended. A tool event or a needs-input notification from ready or no status sets the turn start to its own time (a background wake, or a turn whose start fell outside the 64 KB window), so an old turn start never raises a finished alert. Ended changes only on `SessionStart`, not on a prompt, because a resume sends `SessionStart` first.
+- Session ids are deduplicated once, in `SessionStore.LoadSessions` (newest `Updated`, ties broken by the events file's write time), so rows, the waiting count and alerts see one copy.
+- `SessionStore` reads the last 64 KB of the file (dropping the partial first line). No file means no status; an unreadable file skips the session for that refresh.
 
 ### Config file
 
@@ -96,6 +106,8 @@ bash windows/build.sh [target-dir]
 - Shares everything outside the UI with the Mac app: the same bridge script, installer and file contract (`cctokmon-state.json`, `cctokmon-sessions/`, `CCTOKMON_STATE_FILE` / `CCTOKMON_SESSIONS_DIR`). Do not add a Windows-specific bridge; under native Windows, Claude Code runs the bash bridge through Git Bash.
 - Display rules mirror `menubar/TokenMojo.swift` and must stay in step with it: `livePercent` (null once `resets_at` has passed), severity thresholds 50/80, the 12-hour session window, "active" within 10 minutes, at most 10 session rows, reset/percent/cost wording. They live in `TokenMojo.Core` (`Gauges`, `Dashboard`, `SessionStore`) so they are unit-tested; the WPF project only binds to `DashboardModel`.
 - Sources: `ClaudeDirLocator` returns `%USERPROFILE%\.claude` plus `\\wsl.localhost\<distro>\home\*\.claude` (and `/root`) for distros listed by `wsl.exe --list --running --quiet` (UTF-16LE output). Only running distros are read, because touching a stopped distro's share boots it. Discovery reruns every minute; the bridge files are polled every 5 seconds off the UI thread.
+- Session status differs from the Mac app: the Windows app reads the hook's `.events` log (`SessionEvents`, `StatusAlerts`), so a row is needs input / ready / working / ended. Only a session with no events file falls back to the Mac app's 10-minute "active" rule. The list orders needs input, ready, working, no status, ended, then newest first, before the 10-row cap.
+- Alerts: a balloon tip on entering needs input, and on working → ready after a turn of at least `longTurnSeconds` (default 30) from `%APPDATA%\TokenMojo\settings.json`. The first load is a baseline and alerts nothing. An invalid settings file is shown in the flyout; defaults are never silently used. The tray ring's centre shows the waiting count (needs input plus ready) in place of the percentage.
 - The current state is the most recently written `cctokmon-state.json` across sources (rate limits are per account). Sessions from every source are merged into one list, newest first.
 - Failures stay per source: a distro that stops or denies access mid-read is skipped, never allowed to blank the others or throw out of the timer tick. Bridge files are opened with `FileShare.Delete` so the bridge's `mv` can rename over a file TokenMojo is reading on Windows.
 - Tray icon: one ring for the worst gauge, drawn by the same `RingGauge.Draw` as the dashboard rings and wrapped as a PNG `.ico`; taskbar light/dark comes from `SystemUsesLightTheme`, app light/dark from `AppsUseLightTheme`.

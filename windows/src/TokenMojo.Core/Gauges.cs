@@ -28,8 +28,12 @@ public static class Gauges
 
     public static GlanceGauge Worst(IReadOnlyList<GlanceGauge> gauges) => gauges.MaxBy(g => g.Percent ?? -1)!;
 
-    public static string Summary(IReadOnlyList<GlanceGauge> gauges, BridgeState state) =>
-        string.Join(" · ", gauges.Select(g => $"{g.Label} {PercentText(g.Percent)}").Append(CostText(state.Cost?.TotalCostUsd, 2)));
+    public static string Summary(IReadOnlyList<GlanceGauge> gauges, BridgeState state, int waitingCount = 0)
+    {
+        IEnumerable<string> parts = gauges.Select(g => $"{g.Label} {PercentText(g.Percent)}").Append(CostText(state.Cost?.TotalCostUsd, 2));
+        if (waitingCount > 0) parts = parts.Prepend($"{waitingCount} waiting");
+        return string.Join(" · ", parts);
+    }
 
     // Null once the window has reset: the bridge only refreshes on the next Claude Code interaction.
     public static double? LivePercent(BridgeLimit? limit, DateTimeOffset now)
@@ -51,6 +55,9 @@ public static class Gauges
         >= 100 => "!",
         { } p => ((int)p).ToString(CultureInfo.InvariantCulture),
     };
+
+    // Shown in place of the percentage when sessions are waiting, so it has the same two characters.
+    public static string WaitingIconText(int count) => count > 9 ? "9+" : count.ToString(CultureInfo.InvariantCulture);
 
     public static string CostText(double? usd, int decimals) =>
         "$" + (usd ?? 0).ToString("F" + decimals, CultureInfo.InvariantCulture);

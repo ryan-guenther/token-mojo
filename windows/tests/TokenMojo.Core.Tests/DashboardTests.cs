@@ -191,9 +191,132 @@ public sealed class DashboardTests : IDisposable
 
         // Assert
         Assert.Equal(
-            new SessionRowModel("proj", "proj · Opus · 5 min. ago", "$1.23", 8, "8%", Severity.Ok,
-                IsActive: true, IsCurrent: true),
+            new SessionRowModel("abc-123", "proj", "proj · Opus · 5 min. ago", "$1.23", 8, "8%", Severity.Ok,
+                SessionStatus.None, "Active in the last 10 minutes", IsActive: true, IsCurrent: true),
             row);
+    }
+
+    [Fact]
+    public void Build_SessionsWithMixedStatuses_ListsNeedsInputThenReadyThenWorkingThenNoStatusThenEnded()
+    {
+        // Arrange
+        SessionSnapshot[] sessions =
+        [
+            Session("ended", 1, minutesAgo: 1) with { Status = SessionStatus.Ended },
+            Session("none", 1, minutesAgo: 2),
+            Session("working", 1, minutesAgo: 3) with { Status = SessionStatus.Working },
+            Session("ready", 1, minutesAgo: 4) with { Status = SessionStatus.Ready },
+            Session("needs", 1, minutesAgo: 5) with { Status = SessionStatus.NeedsInput },
+        ];
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
+
+        // Assert
+        Assert.Equal(["needs", "ready", "working", "none", "ended"], list.Rows.Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Build_SessionsWithTheSameStatus_ListsNewestFirst()
+    {
+        // Arrange
+        SessionSnapshot[] sessions =
+        [
+            Session("older", 1, minutesAgo: 30) with { Status = SessionStatus.Ready },
+            Session("newer", 1, minutesAgo: 2) with { Status = SessionStatus.Ready },
+        ];
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
+
+        // Assert
+        Assert.Equal(["newer", "older"], list.Rows.Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Build_MoreThanTenSessions_KeepsTheOnesNeedingAttention()
+    {
+        // Arrange
+        List<SessionSnapshot> sessions = Enumerable.Range(0, 11).Select(i => Session($"s{i}", 1, minutesAgo: i)).ToList();
+        sessions.Add(Session("needs", 1, minutesAgo: 600) with { Status = SessionStatus.NeedsInput });
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
+
+        // Assert
+        Assert.Equal("needs", list.Rows[0].Id);
+        Assert.Equal(10, list.Rows.Count);
+    }
+
+    [Theory]
+    [InlineData(SessionStatus.NeedsInput, "Needs input")]
+    [InlineData(SessionStatus.Ready, "Ready")]
+    [InlineData(SessionStatus.Working, "Working")]
+    [InlineData(SessionStatus.Ended, "Ended")]
+    public void Build_SessionWithHookStatus_DescribesItInTheRow(SessionStatus status, string expected)
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = status };
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.Equal(status, row.Status);
+        Assert.Equal(expected, row.StatusText);
+    }
+
+    [Theory]
+    [InlineData(9, "Active in the last 10 minutes")]
+    [InlineData(11, "Idle")]
+    public void Build_SessionWithoutHooks_KeepsTheTenMinuteActivityWording(int minutesAgo, string expected)
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo);
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.Equal(SessionStatus.None, row.Status);
+        Assert.Equal(expected, row.StatusText);
+    }
+
+    [Fact]
+    public void Build_RecentSessionWithHookStatus_IsNotMarkedActiveByTheTenMinuteRule()
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = SessionStatus.Ended };
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.False(row.IsActive);
+    }
+
+    [Fact]
+    public void Build_Sessions_CountsNeedsInputAndReadyAsWaiting()
+    {
+        // Arrange
+        SessionSnapshot[] sessions =
+        [
+            Session("needs", 1, minutesAgo: 1) with { Status = SessionStatus.NeedsInput },
+            Session("ready", 1, minutesAgo: 2) with { Status = SessionStatus.Ready },
+            Session("working", 1, minutesAgo: 3) with { Status = SessionStatus.Working },
+            Session("ended", 1, minutesAgo: 4) with { Status = SessionStatus.Ended },
+            Session("none", 1, minutesAgo: 5),
+        ];
+
+        // Act / Assert
+        Assert.Equal(2, Build(BridgeState.Parse(Payloads.Full), sessions).WaitingCount);
+    }
+
+    [Fact]
+    public void Build_NoSessions_HasNobodyWaiting()
+    {
+        // Act / Assert
+        Assert.Equal(0, Build(BridgeState.Parse(Payloads.Full)).WaitingCount);
     }
 
     [Fact]
