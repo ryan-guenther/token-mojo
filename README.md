@@ -223,7 +223,7 @@ The hook never prints anything and always exits 0, so it cannot interrupt a sess
 
 Needs input clears when the main agent next starts or finishes a tool, which is what follows an approval or a denial. A subagent starting a tool does not clear it. A session that has ended stays ended until it starts again, and a prompt alone does not revive it.
 
-Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
+Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt, and that prompt continues the old turn's timer: a short reply after a long idle gap can raise a "Finished" alert. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
 
 ---
 
