@@ -103,24 +103,27 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
-    public void LoadSessions_StatusFileBesideSession_AttachesStatusAndTimes()
+    public void LoadSessions_EventsFileBesideSession_AttachesStatusAndTimes()
     {
         // Arrange
         ClaudeSource source = _temp.Source("win");
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
-        _temp.Write("win/cctokmon-sessions/a.status", """{"status":"needs_input","since":1792721250,"turn_started":1792721248}""", Now);
+        _temp.Write("win/cctokmon-sessions/a.events", string.Join("\n",
+            """{"t":1000,"e":"SessionStart"}""",
+            """{"t":1010,"e":"UserPromptSubmit"}""",
+            """{"t":1020,"e":"Notification","n":"permission_prompt"}""") + "\n", Now);
 
         // Act
         SessionSnapshot session = SessionStore.LoadSessions([source], Now).Single();
 
         // Assert
         Assert.Equal(SessionStatus.NeedsInput, session.Status);
-        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792721250), session.StatusSince);
-        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792721248), session.TurnStarted);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1020), session.StatusSince);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1010), session.TurnStarted);
     }
 
     [Fact]
-    public void LoadSessions_NoStatusFile_HasNoStatus()
+    public void LoadSessions_NoEventsFile_HasNoStatus()
     {
         // Arrange
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
@@ -135,26 +138,25 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
-    public void LoadSessions_UndecodableStatusFile_SkipsTheSessionForThisRefresh()
+    public void LoadSessions_EventsFileOfGarbage_StillListsTheSessionWithNoStatus()
     {
         // Arrange
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
-        _temp.Write("win/cctokmon-sessions/a.status", "not json", Now);
-        _temp.Write("win/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now);
+        _temp.Write("win/cctokmon-sessions/a.events", "not json\n{\"t\":\n", Now);
 
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win")], Now);
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
 
         // Assert
-        Assert.Equal(["b"], sessions.Select(s => s.Id));
+        Assert.Equal(SessionStatus.None, session.Status);
     }
 
     [Fact]
-    public void LoadSessions_UnreadableStatusFile_SkipsTheSessionForThisRefresh()
+    public void LoadSessions_UnreadableEventsFile_SkipsTheSessionForThisRefresh()
     {
         // Arrange
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
-        string locked = _temp.Write("win/cctokmon-sessions/a.status", """{"status":"ready","since":1,"turn_started":null}""", Now);
+        string locked = _temp.Write("win/cctokmon-sessions/a.events", """{"t":1,"e":"SessionStart"}""" + "\n", Now);
         _temp.Write("win/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now);
         using IDisposable denied = TempDir.DenyRead(locked);
 
@@ -166,13 +168,47 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
-    public void LoadSessions_StatusFileWithoutSessionFile_IsNotListed()
+    public void LoadSessions_EventsFileWithoutSessionFile_IsNotListed()
     {
         // Arrange
-        _temp.Write("win/cctokmon-sessions/orphan.status", """{"status":"ready","since":1,"turn_started":null}""", Now);
+        _temp.Write("win/cctokmon-sessions/orphan.events", """{"t":1,"e":"SessionStart"}""" + "\n", Now);
 
         // Act / Assert
         Assert.Empty(SessionStore.LoadSessions([_temp.Source("win")], Now));
+    }
+
+    [Fact]
+    public void LoadSessions_LongEventsFile_ReadsOnlyTheLastSixtyFourKilobytes()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        string early = """{"t":1,"e":"SessionEnd"}""" + "\n";
+        string filler = new string('x', 70_000) + "\n";
+        string last = """{"t":9,"e":"Stop"}""" + "\n";
+        _temp.Write("win/cctokmon-sessions/a.events", early + filler + last, Now);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.Ready, session.Status);
+    }
+
+    [Fact]
+    public void LoadSessions_ReadStartingMidLine_DropsThePartialFirstLine()
+    {
+        // Arrange: the 64 KB window starts exactly where a valid-looking SessionEnd line begins mid-line
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        string ended = """{"t":5,"e":"SessionEnd"}""" + "\n";
+        string last = """{"t":9,"e":"Stop"}""" + "\n";
+        string filler = new string('y', 65_536 - ended.Length - last.Length - 1) + "\n";
+        _temp.Write("win/cctokmon-sessions/a.events", "GARBAGE" + ended + filler + last, Now);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.Ready, session.Status);
     }
 
     [Fact]

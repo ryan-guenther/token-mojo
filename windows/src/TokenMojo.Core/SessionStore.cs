@@ -14,6 +14,7 @@ public sealed record LoadedState(BridgeState State, DateTimeOffset Updated, Clau
 public static class SessionStore
 {
     public static readonly TimeSpan RecentWindow = TimeSpan.FromHours(12);
+    private const int EventsTailBytes = 64 * 1024;
 
     /// <summary>The newest state file across sources; rate limits are per account, so the latest write wins.</summary>
     public static LoadedState? LoadCurrent(IEnumerable<ClaudeSource> sources)
@@ -53,11 +54,11 @@ public static class SessionStore
                 DateTimeOffset updated = new(file.LastWriteTimeUtc);
                 if (updated <= cutoff) continue;
                 if (TryRead(file) is not { } state) continue;
-                // A status file that is there but unreadable is caught mid-replace, like the bridge file: skip until next refresh.
-                if (!TryReadStatus(file, out SessionStatusFile? status)) continue;
+                // An events file that is there but unreadable is skipped until the next refresh, like the bridge file.
+                if (!TryReadEvents(file, out SessionEventState? events)) continue;
                 sessions.Add(new SessionSnapshot(
                     Path.GetFileNameWithoutExtension(file.Name), state, updated,
-                    status?.Status ?? SessionStatus.None, status?.Since, status?.TurnStarted));
+                    events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted));
             }
         }
         // One unreadable source (a WSL distro that stopped mid-read) must not hide the others.
@@ -82,19 +83,25 @@ public static class SessionStore
         }
     }
 
-    // The hook script writes <id>.status beside <id>.json. No file means a session without hooks (null status);
-    // false means the file exists but could not be read or decoded.
-    private static bool TryReadStatus(FileInfo sessionFile, out SessionStatusFile? status)
+    // The hook script appends to <id>.events beside <id>.json. No file means a session without hooks (null events);
+    // false means the file exists but could not be read. Lines that are not events never fail the read.
+    private static bool TryReadEvents(FileInfo sessionFile, out SessionEventState? events)
     {
-        status = null;
-        string path = Path.ChangeExtension(sessionFile.FullName, ".status");
+        events = null;
+        string path = Path.ChangeExtension(sessionFile.FullName, ".events");
         if (!File.Exists(path)) return true;
         try
         {
-            status = SessionStatusFile.Parse(ReadShared(path));
+            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            long start = Math.Max(0, stream.Length - EventsTailBytes);
+            stream.Seek(start, SeekOrigin.Begin);
+            using StreamReader reader = new(stream);
+            IEnumerable<string> lines = reader.ReadToEnd().Split('\n');
+            // Starting mid-file lands inside a line, which is only part of an event.
+            events = SessionEvents.Reduce(start > 0 ? lines.Skip(1) : lines);
             return true;
         }
-        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return false;
         }
