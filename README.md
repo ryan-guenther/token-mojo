@@ -101,7 +101,8 @@ The installer will:
 3. Symlink `cctokmon` to `~/.local/bin/cctokmon` (on Windows, a small launcher script, since Git Bash cannot reliably symlink)
 4. Copy the statusline companion script to `~/.claude/cctokmon-statusline.sh`
 5. Optionally configure the statusline bridge in `~/.claude/settings.json`
-6. Copy the session status hook to `~/.claude/cctokmon-hook.sh` and optionally register it in `~/.claude/settings.json` (used by the TokenMojo Windows app, see [Session status](#session-status))
+6. Link `tm` to `~/.local/bin/tm` (a launcher on Windows; an existing `tm` that is not cctokmon's is left alone), see [Starting sessions with tm](#starting-sessions-with-tm)
+7. Copy the session status hook to `~/.claude/cctokmon-hook.sh` and optionally register it in `~/.claude/settings.json` (used by the TokenMojo Windows app, see [Session status](#session-status))
 
 If `~/.local/bin` is not in your PATH, add this to your `~/.bashrc` or `~/.zshrc`:
 ```bash
@@ -208,6 +209,21 @@ cctokmon.sh  →  terminal dashboard
 
 The statusline script must complete in under 100ms (Claude Code requirement). It reads stdin, writes to a temp file, and atomically renames it. It also keeps a per-session copy in `~/.claude/cctokmon-sessions/<session_id>.json` (pruned after 7 days) so the menu bar app can list every recent session.
 
+### Starting sessions with tm
+
+`tm` starts Claude Code in the current terminal tab and names the tab `TM <name> <id8>`, where `<id8>` is the first 8 characters of the session id. The TokenMojo Windows app finds a session's window by that tag.
+
+```bash
+tm                                   # start Claude Code here
+tm fix the login bug                 # start with a prompt
+tm --wt fix-login fix the login bug  # in a Claude Code worktree called fix-login
+tm --prompt-file task.txt            # use the file as the prompt, then delete it
+tm --resume <session-id>             # resume a session, tagging the tab again
+tm -- -starts-with-a-dash            # everything after -- is the prompt
+```
+
+`--wt NAME` accepts letters, digits, `.`, `_` and `-`. `tm` sets `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, since Claude Code would otherwise rewrite the tab title; the cost is that Claude's own title updates and terminal status reports are off in that session.
+
 ### Session status
 
 `cctokmon-hook.sh` is a separate Claude Code hook that logs what each session is doing, one line per event, in `~/.claude/cctokmon-sessions/<session_id>.events` (event name and time only, never your prompts or tool input). TokenMojo reads the end of that log to get the status. The installer offers to register it for eight events, adding an entry beside any hooks you already have:
@@ -286,11 +302,18 @@ Windows hides new tray icons under the **^** arrow beside the clock at first; dr
 - **The icon** is one ring for whichever of the 5-hour limit, 7-day limit and context window is highest, with that percentage inside: green under 50%, orange from 50%, red from 80%. `!` means 100% or more, and `–` means there is no data yet. A limit whose window has reset shows "Reset — awaiting update" in the dashboard until your next Claude Code interaction refreshes it.
 - **Hover** for all three gauges plus the session cost.
 - **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours. In that list the highlighted row is the current session, and the dot shows its [status](#session-status): red needs input, teal ready for your next prompt, green working, grey ended. Sessions that never reported a status show green if active in the last 10 minutes and grey otherwise. Sessions needing you are listed first.
-- **Alerts** appear as a notification when a session needs input, and when a turn that took `longTurnSeconds` or more finishes (30 by default, see [Settings](#settings)). While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts.
+- **Click a session row** to bring its terminal window forward. If there is no window, an ended session is resumed in a new Windows Terminal window, and one that still looks like it is running asks first ("Resume in a new terminal anyway?"). **Right-click** a row for Focus, Resume in new terminal, Open folder (in Explorer, through the WSL share) and Copy session ID; items that do not apply are greyed out. After a focus or resume the flyout closes.
+- **Alerts** appear as a notification when a session needs input, and when a turn that took `longTurnSeconds` or more finishes (30 by default, see [Settings](#settings)). While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts. A notification is skipped when that session's window is already in front, and clicking one brings the session's window forward (or offers to resume it).
 - **Pop Out Window** opens the same dashboard in a window that stays on top; closing it remembers where it was.
 - **Launch at Login** (in the dashboard or the right-click menu) starts it automatically. **Quit** is in both too.
 
 The 5-hour and 7-day rings appear only for Claude Pro and Max subscribers; with an API key there are no rate limits, so only the context window shows.
+
+Limits of click-to-focus and resume:
+
+- Focus works only for sessions started with `tm` (see [Starting sessions with tm](#starting-sessions-with-tm)), and only while that tab is the active tab in its Windows Terminal window, because the window title is the active tab's.
+- Resume is for WSL sessions. A session from the Windows profile can be focused but not resumed.
+- If the session's folder (for example a removed worktree) no longer exists, resume starts in the repository root, or in your home folder when that is gone too.
 
 ### Settings
 
@@ -317,7 +340,7 @@ The 5-hour and 7-day rings appear only for Claude Pro and Max subscribers; with 
 bash uninstall.sh
 ```
 
-Removes the symlink (or Windows launcher) at `~/.local/bin/cctokmon`, the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook script at `~/.claude/cctokmon-hook.sh`, and the `statusLine` entry and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
+Removes the symlinks (or Windows launchers) at `~/.local/bin/cctokmon` and `~/.local/bin/tm` (a `tm` that is not cctokmon's is kept), the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook script at `~/.claude/cctokmon-hook.sh`, and the `statusLine` entry and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
 
 On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position) and `%APPDATA%\TokenMojo` (settings).
 
