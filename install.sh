@@ -10,6 +10,8 @@ CLAUDE_DIR="$HOME/.claude"
 CONFIG_DIR="$HOME/.config/cctokmon"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
+HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
+HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","Notification","Stop","SessionEnd"]'
 
 # ── Colors ─────────────────────────────────────────────────────────────────────
 if tput colors &>/dev/null 2>&1 && [[ "$(tput colors)" -ge 8 ]]; then
@@ -200,6 +202,12 @@ cp "${SCRIPT_DIR}/cctokmon-statusline.sh" "$STATUSLINE_DEST"
 chmod +x "$STATUSLINE_DEST"
 ok "Statusline: ${STATUSLINE_DEST}"
 
+# Copy session status hook
+chmod +x "${SCRIPT_DIR}/cctokmon-hook.sh"
+cp "${SCRIPT_DIR}/cctokmon-hook.sh" "$HOOK_DEST"
+chmod +x "$HOOK_DEST"
+ok "Hook:       ${HOOK_DEST}"
+
 # PATH notice
 if ! command -v cctokmon >/dev/null 2>&1; then
     warn "${BIN_DIR} is not in your PATH."
@@ -253,6 +261,45 @@ if [[ "${configure_sl:-0}" -eq 1 ]]; then
     ok "statusLine set in ${SETTINGS_FILE}"
 fi
 
+# ── Register Claude Code session status hooks ─────────────────────────────────
+
+printf '\n%sRegister Claude Code session status hooks?%s\n' "${BOLD}" "${R}"
+printf 'This lets TokenMojo show which sessions are working, ready or need input.\n'
+printf 'It adds an entry for each of 6 events to "hooks" in ~/.claude/settings.json\n'
+printf 'and leaves your existing hooks alone.\n\n'
+
+configure_hooks=0
+hooks_registered=0
+if [[ -f "$SETTINGS_FILE" ]]; then
+    hooks_registered=$(jq --arg cmd "$HOOK_DEST" --argjson events "$HOOK_EVENTS" '
+        [$events[] as $e | select([.hooks[$e][]?.hooks[]?.command] | index($cmd))] | length
+    ' "$SETTINGS_FILE" 2>/dev/null || echo 0)
+fi
+if [[ "$hooks_registered" -eq 6 ]]; then
+    ok "Hooks already registered in ${SETTINGS_FILE}"
+else
+    printf '  Register now? [Y/n] '
+    read -r ans
+    configure_hooks=1
+    [[ "${ans,,}" == "n" ]] && configure_hooks=0
+fi
+
+if [[ "$configure_hooks" -eq 1 ]]; then
+    if [[ ! -f "$SETTINGS_FILE" ]]; then
+        printf '{}' > "$SETTINGS_FILE"
+    fi
+
+    local_tmp=$(mktemp)
+    jq --arg cmd "$HOOK_DEST" --argjson events "$HOOK_EVENTS" '
+        reduce $events[] as $e (.;
+            if ([.hooks[$e][]?.hooks[]?.command] | index($cmd)) then .
+            else .hooks[$e] = ((.hooks[$e] // []) + [{"hooks": [{"type": "command", "command": $cmd}]}])
+            end)
+    ' "$SETTINGS_FILE" > "$local_tmp"
+    mv "$local_tmp" "$SETTINGS_FILE"
+    ok "Hooks registered in ${SETTINGS_FILE}"
+fi
+
 # ── Done ───────────────────────────────────────────────────────────────────────
 
 printf '\n%sInstallation complete!%s\n\n' "${BOLD}${GREEN}" "${R}"
@@ -264,4 +311,9 @@ printf '  %scctokmon --check%s       # verify setup\n\n' "${BOLD}" "${R}"
 if [[ "${configure_sl:-0}" -eq 1 ]]; then
     printf 'The statusline bridge is active. Claude Code will update cctokmon\n'
     printf 'on every interaction. Open cctokmon in a separate terminal pane.\n\n'
+fi
+
+if [[ "$configure_hooks" -eq 1 ]]; then
+    printf 'Session status hooks are registered. Restart running Claude Code sessions\n'
+    printf 'to pick them up.\n\n'
 fi

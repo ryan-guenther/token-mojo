@@ -7,6 +7,8 @@ BIN_DIR="$HOME/.local/bin"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
+HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
+HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","Notification","Stop","SessionEnd"]'
 STATE_FILE="$CLAUDE_DIR/cctokmon-state.json"
 SESSIONS_DIR="$CLAUDE_DIR/cctokmon-sessions"
 
@@ -34,6 +36,12 @@ if [[ -f "$STATUSLINE_DEST" ]]; then
     ok "Removed: ${STATUSLINE_DEST}"
 fi
 
+# Remove session status hook script
+if [[ -f "$HOOK_DEST" ]]; then
+    rm "$HOOK_DEST"
+    ok "Removed: ${HOOK_DEST}"
+fi
+
 # Remove state file
 if [[ -f "$STATE_FILE" ]]; then
     rm "$STATE_FILE"
@@ -55,6 +63,25 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
         mv "$local_tmp" "$SETTINGS_FILE"
         ok "Removed statusLine from ${SETTINGS_FILE}"
     fi
+fi
+
+# Remove our hook entries from settings.json, keeping everyone else's
+if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1 \
+    && jq -e --arg cmd "$HOOK_DEST" '[.hooks[]?[]?.hooks[]?.command] | index($cmd)' "$SETTINGS_FILE" >/dev/null 2>&1; then
+    local_tmp=$(mktemp)
+    jq --arg cmd "$HOOK_DEST" --argjson events "$HOOK_EVENTS" '
+        reduce $events[] as $e (.;
+            if .hooks[$e] == null then .
+            else .hooks[$e] |= [.[]
+                | (any(.hooks[]?; .command == $cmd)) as $ours
+                | if $ours then .hooks |= map(select(.command != $cmd)) else . end
+                | select(($ours | not) or (.hooks | length) > 0)]
+            end
+            | if .hooks[$e] == [] then del(.hooks[$e]) else . end)
+        | if .hooks == {} then del(.hooks) else . end
+    ' "$SETTINGS_FILE" > "$local_tmp"
+    mv "$local_tmp" "$SETTINGS_FILE"
+    ok "Removed session status hooks from ${SETTINGS_FILE}"
 fi
 
 # Ask about config
