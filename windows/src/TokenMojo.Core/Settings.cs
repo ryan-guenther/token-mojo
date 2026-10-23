@@ -13,15 +13,9 @@ public sealed record Settings(int LongTurnSeconds = 30)
 
     public static Settings Load(string path)
     {
-        if (!File.Exists(path))
-        {
-            Settings defaults = new();
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(defaults, Options));
-            return defaults;
-        }
         try
         {
+            if (!File.Exists(path)) return CreateDefault(path);
             Settings settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path), Options)
                 ?? throw new JsonException("The file is JSON null");
             if (settings.LongTurnSeconds < 0) throw new JsonException("longTurnSeconds must not be negative");
@@ -31,5 +25,13 @@ public sealed record Settings(int LongTurnSeconds = 30)
         {
             throw new SettingsException($"Cannot read settings file {path}: {e.Message}", e);
         }
+    }
+
+    private static Settings CreateDefault(string path)
+    {
+        Settings defaults = new();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(defaults, Options));
+        return defaults;
     }
 }

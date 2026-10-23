@@ -191,11 +191,11 @@ public class StatusAlertsTests
     }
 
     [Fact]
-    public void Diff_SameSessionIdFromTwoSources_LastOneWinsWithoutThrowing()
+    public void Diff_SameSessionIdFromTwoSources_NewestCopyWinsWithoutThrowing()
     {
         // Arrange
         Baseline baseline = BaselineOf(Session("a", SessionStatus.Working));
-        SessionSnapshot[] current = [Session("a", SessionStatus.Working), Session("a", SessionStatus.NeedsInput, sinceSeconds: 5)];
+        SessionSnapshot[] current = [Session("a", SessionStatus.NeedsInput, sinceSeconds: 5), Session("a", SessionStatus.Working, updatedMinutesAgo: 10)];
 
         // Act
         IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(baseline, current, LongTurn);
@@ -220,10 +220,10 @@ public class StatusAlertsTests
     }
 
     [Fact]
-    public void Advance_SameSessionIdFromTwoSources_KeepsTheLastOne()
+    public void Advance_SameSessionIdFromTwoSources_KeepsTheNewestCopy()
     {
         // Arrange
-        SessionSnapshot[] current = [Session("a", SessionStatus.Working), Session("a", SessionStatus.Ready)];
+        SessionSnapshot[] current = [Session("a", SessionStatus.Ready), Session("a", SessionStatus.Working, updatedMinutesAgo: 10)];
 
         // Act
         Baseline baseline = StatusAlerts.Advance(null, current, Now);
@@ -246,13 +246,72 @@ public class StatusAlertsTests
         Assert.Equal(["kept"], later.Keys);
     }
 
+    [Fact]
+    public void Balloon_OneAlert_UsesItsTitleAndMessage()
+    {
+        // Act
+        AlertBalloon balloon = StatusAlerts.Balloon([new StatusAlert("a", StatusAlertKind.NeedsInput, "api", "Needs input")]);
+
+        // Assert
+        Assert.Equal(new AlertBalloon("api", "Needs input"), balloon);
+    }
+
+    [Fact]
+    public void Balloon_SeveralNeedsInputAlerts_SaysTheSessionsNeedYou()
+    {
+        // Arrange
+        StatusAlert[] alerts =
+        [
+            new("a", StatusAlertKind.NeedsInput, "api", "Needs input"),
+            new("b", StatusAlertKind.NeedsInput, "web", "Needs input"),
+        ];
+
+        // Act
+        AlertBalloon balloon = StatusAlerts.Balloon(alerts);
+
+        // Assert
+        Assert.Equal(new AlertBalloon("2 sessions need you", "api: Needs input\nweb: Needs input"), balloon);
+    }
+
+    [Fact]
+    public void Balloon_MixedAlerts_UsesANeutralTitleListingEachSession()
+    {
+        // Arrange
+        StatusAlert[] alerts =
+        [
+            new("a", StatusAlertKind.NeedsInput, "api", "Needs input"),
+            new("b", StatusAlertKind.TurnFinished, "web", "Finished"),
+        ];
+
+        // Act
+        AlertBalloon balloon = StatusAlerts.Balloon(alerts);
+
+        // Assert
+        Assert.Equal(new AlertBalloon("2 sessions updated", "api: Needs input\nweb: Finished"), balloon);
+    }
+
+    [Fact]
+    public void Balloon_SeveralFinishedAlerts_UsesANeutralTitle()
+    {
+        // Arrange
+        StatusAlert[] alerts =
+        [
+            new("a", StatusAlertKind.TurnFinished, "api", "Finished"),
+            new("b", StatusAlertKind.TurnFinished, "web", "Finished"),
+        ];
+
+        // Act / Assert
+        Assert.Equal("2 sessions updated", StatusAlerts.Balloon(alerts).Title);
+    }
+
     private static Baseline BaselineOf(params SessionSnapshot[] sessions) => StatusAlerts.Advance(null, sessions, Now);
 
-    private static SessionSnapshot Session(string id, SessionStatus status, int sinceSeconds = 0, int? turnSeconds = null)
+    private static SessionSnapshot Session(
+        string id, SessionStatus status, int sinceSeconds = 0, int? turnSeconds = null, int updatedMinutesAgo = 0)
     {
         BridgeState state = BridgeState.Parse(Payloads.Full) with { SessionId = id };
         DateTimeOffset since = Now.AddSeconds(sinceSeconds);
         DateTimeOffset? turnStarted = turnSeconds is { } seconds ? since.AddSeconds(-seconds) : null;
-        return new SessionSnapshot(id, state, Now, status, since, turnStarted);
+        return new SessionSnapshot(id, state, Now.AddMinutes(-updatedMinutesAgo), status, since, turnStarted);
     }
 }

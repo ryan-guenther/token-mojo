@@ -128,10 +128,8 @@ internal sealed class TrayController : IDisposable
         IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_alertBaseline, snapshot.Sessions, snapshot.Settings.LongTurn);
         _alertBaseline = StatusAlerts.Advance(_alertBaseline, snapshot.Sessions, DateTimeOffset.Now);
         if (alerts.Count == 0) return;
-        // One balloon replaces the last, so several alerts in one refresh share it.
-        string title = alerts.Count == 1 ? alerts[0].Title : $"{alerts.Count} sessions need you";
-        string text = alerts.Count == 1 ? alerts[0].Message : string.Join("\n", alerts.Select(a => $"{a.Title}: {a.Message}"));
-        _notifyIcon.ShowBalloonTip((int)BalloonDuration.TotalMilliseconds, title, text, Forms.ToolTipIcon.Info);
+        AlertBalloon balloon = StatusAlerts.Balloon(alerts);
+        _notifyIcon.ShowBalloonTip((int)BalloonDuration.TotalMilliseconds, balloon.Title, balloon.Text, Forms.ToolTipIcon.Info);
     }
 
     private void Render(BridgeSnapshot? snapshot, DateTimeOffset now)
