@@ -18,7 +18,11 @@ internal sealed class TrayController : IDisposable
     private const string NoDataMessage =
         "No bridge data yet. Enable the statusline bridge with install.sh, then start a Claude Code session.";
 
+    private static readonly TimeSpan BalloonDuration = TimeSpan.FromSeconds(10);
+
     private readonly string _windowsHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    private readonly string _settingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TokenMojo", "settings.json");
     private readonly ClaudeDirLocator _locator;
     private readonly Forms.NotifyIcon _notifyIcon = new();
     private readonly Forms.ToolStripMenuItem _launchAtLogin = new("Launch at Login");
@@ -28,6 +32,7 @@ internal sealed class TrayController : IDisposable
     private IReadOnlyList<ClaudeSource> _sources = [];
     private DateTimeOffset _lastDiscovery = DateTimeOffset.MinValue;
     private BridgeSnapshot? _latest;
+    private IReadOnlyList<SessionSnapshot>? _previousSessions;
     private bool _refreshing;
 
     public TrayController()
@@ -50,6 +55,7 @@ internal sealed class TrayController : IDisposable
         {
             if (e.Button == Forms.MouseButtons.Left) _flyout.Toggle();
         };
+        _notifyIcon.BalloonTipClicked += (_, _) => _flyout.Toggle();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         Render(null, DateTimeOffset.Now);
         _notifyIcon.Visible = true;
@@ -79,6 +85,7 @@ internal sealed class TrayController : IDisposable
             BridgeSnapshot snapshot = await Task.Run(Load);
             _latest = snapshot;
             Render(snapshot, DateTimeOffset.Now);
+            RaiseAlerts(snapshot);
         }
         finally
         {
@@ -96,16 +103,35 @@ internal sealed class TrayController : IDisposable
         }
         try
         {
+            // Read every refresh, so fixing a broken file takes effect without a restart.
+            Settings settings = Settings.Load(_settingsPath);
             LoadedState? current = SessionStore.LoadCurrent(_sources);
-            return new BridgeSnapshot(current, current is null ? [] : SessionStore.LoadSessions(_sources, now), null);
+            return new BridgeSnapshot(current, current is null ? [] : SessionStore.LoadSessions(_sources, now), null, settings);
+        }
+        catch (SettingsException e)
+        {
+            return new BridgeSnapshot(null, [], e.Message, null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
             // The newest state file was replaced or its distro stopped mid-read; rediscover on the next tick.
             _lastDiscovery = DateTimeOffset.MinValue;
             Trace.TraceWarning("TokenMojo: cannot read bridge files: {0}", e.Message);
-            return new BridgeSnapshot(null, [], e.Message);
+            return new BridgeSnapshot(null, [], e.Message, null);
         }
+    }
+
+    private void RaiseAlerts(BridgeSnapshot snapshot)
+    {
+        // Without data or settings there is nothing to compare, so keep the last baseline.
+        if (snapshot.Current is null || snapshot.Settings is null) return;
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_previousSessions, snapshot.Sessions, snapshot.Settings.LongTurn);
+        _previousSessions = snapshot.Sessions;
+        if (alerts.Count == 0) return;
+        // One balloon replaces the last, so several alerts in one refresh share it.
+        string title = alerts.Count == 1 ? alerts[0].Title : $"{alerts.Count} sessions need you";
+        string text = alerts.Count == 1 ? alerts[0].Message : string.Join("\n", alerts.Select(a => $"{a.Title}: {a.Message}"));
+        _notifyIcon.ShowBalloonTip((int)BalloonDuration.TotalMilliseconds, title, text, Forms.ToolTipIcon.Info);
     }
 
     private void Render(BridgeSnapshot? snapshot, DateTimeOffset now)
@@ -113,7 +139,7 @@ internal sealed class TrayController : IDisposable
         System.Drawing.Icon? previous = _notifyIcon.Icon;
         if (snapshot?.Current is not { } current)
         {
-            _notifyIcon.Icon = TrayIcon.Render(new GlanceGauge("", null), Theme.TaskbarUsesLightTheme);
+            _notifyIcon.Icon = TrayIcon.Render(new GlanceGauge("", null), Theme.TaskbarUsesLightTheme, waitingCount: 0);
             _notifyIcon.Text = "TokenMojo: no bridge data yet";
             string message = snapshot?.Error ?? NoDataMessage;
             _flyout.View.ShowMessage(message);
@@ -122,9 +148,9 @@ internal sealed class TrayController : IDisposable
         else
         {
             IReadOnlyList<GlanceGauge> gauges = Gauges.Glance(current.State, now);
-            _notifyIcon.Icon = TrayIcon.Render(Gauges.Worst(gauges), Theme.TaskbarUsesLightTheme);
-            _notifyIcon.Text = Gauges.Summary(gauges, current.State);
             DashboardModel model = Dashboard.Build(current, snapshot.Sessions, now, _windowsHome);
+            _notifyIcon.Icon = TrayIcon.Render(Gauges.Worst(gauges), Theme.TaskbarUsesLightTheme, model.WaitingCount);
+            _notifyIcon.Text = Gauges.Summary(gauges, current.State, model.WaitingCount);
             _flyout.View.Show(model);
             _popOut?.View.Show(model);
         }
@@ -150,5 +176,5 @@ internal sealed class TrayController : IDisposable
         Render(_latest, DateTimeOffset.Now);
     }
 
-    private sealed record BridgeSnapshot(LoadedState? Current, IReadOnlyList<SessionSnapshot> Sessions, string? Error);
+    private sealed record BridgeSnapshot(LoadedState? Current, IReadOnlyList<SessionSnapshot> Sessions, string? Error, Settings? Settings);
 }

@@ -7,10 +7,10 @@ using TokenMojo.Core;
 
 namespace TokenMojo;
 
-/// <summary>Draws the worst gauge as a ring with its percentage inside, sized for the notification area.</summary>
+/// <summary>Draws the worst gauge as a ring with its percentage inside, or the waiting-session count when there is one, sized for the notification area.</summary>
 internal static class TrayIcon
 {
-    public static System.Drawing.Icon Render(GlanceGauge gauge, bool lightTaskbar)
+    public static System.Drawing.Icon Render(GlanceGauge gauge, bool lightTaskbar, int waitingCount)
     {
         int size = System.Windows.Forms.SystemInformation.SmallIconSize.Width;
         Color ink = lightTaskbar ? Colors.Black : Colors.White;
@@ -23,9 +23,10 @@ internal static class TrayIcon
         {
             RingGauge.Draw(context, center, (size - thickness) / 2, thickness, Math.Min(percent, 100),
                 new SolidColorBrush(Color.FromArgb(0x59, ink.R, ink.G, ink.B)), Theme.SeverityBrush(Gauges.SeverityOf(percent)));
-            FormattedText text = new(Gauges.IconText(gauge.Percent), CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            string label = waitingCount > 0 ? Gauges.WaitingIconText(waitingCount) : Gauges.IconText(gauge.Percent);
+            FormattedText text = new(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
                 new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
-                size * 0.45, new SolidColorBrush(ink), pixelsPerDip: 1);
+                size * 0.45, waitingCount > 0 ? Theme.Teal : new SolidColorBrush(ink), pixelsPerDip: 1);
             context.DrawText(text, new Point(center.X - text.Width / 2, center.Y - text.Height / 2));
         }
         RenderTargetBitmap bitmap = new(size, size, 96, 96, PixelFormats.Pbgra32);
