@@ -114,7 +114,7 @@ public static class Dashboard
                 Gauges.SeverityOf(context),
                 session.Status,
                 StatusText(session, now),
-                session.IsActive(now),
+                session.Status == SessionStatus.None && session.IsActive(now),
                 session.Id == currentId);
         }).ToList();
         return new SessionListModel($"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", rows);

@@ -220,6 +220,31 @@ public class GaugesTests
     }
 
     [Fact]
+    public void Summary_SessionsWaiting_PrefixesTheCount()
+    {
+        // Arrange
+        BridgeState state = BridgeState.Parse(Payloads.Full);
+        GlanceGauge[] gauges = [new("ctx", 8)];
+
+        // Act / Assert
+        Assert.Equal("3 waiting · ctx 8% · $1.23", Gauges.Summary(gauges, state, waitingCount: 3));
+    }
+
+    [Theory]
+    [InlineData(1, "1")]
+    [InlineData(9, "9")]
+    [InlineData(10, "9+")]
+    [InlineData(40, "9+")]
+    public void WaitingIconText_FitsTwoCharactersInTheTrayIcon(int count, string expected)
+    {
+        // Act
+        string text = Gauges.WaitingIconText(count);
+
+        // Assert
+        Assert.Equal(expected, text);
+    }
+
+    [Fact]
     public void ResetText_NoLimit_ShowsNotApplicable()
     {
         // Act

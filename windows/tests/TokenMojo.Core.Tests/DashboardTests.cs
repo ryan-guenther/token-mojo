@@ -283,6 +283,19 @@ public sealed class DashboardTests : IDisposable
     }
 
     [Fact]
+    public void Build_RecentSessionWithHookStatus_IsNotMarkedActiveByTheTenMinuteRule()
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = SessionStatus.Ended };
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.False(row.IsActive);
+    }
+
+    [Fact]
     public void Build_Sessions_CountsNeedsInputAndReadyAsWaiting()
     {
         // Arrange
