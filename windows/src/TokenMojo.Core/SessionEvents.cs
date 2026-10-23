@@ -1,8 +1,9 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 
 namespace TokenMojo.Core;
 
-public sealed record SessionEventState(SessionStatus Status, DateTimeOffset? Since, DateTimeOffset? TurnStarted);
+public sealed record SessionEventState(SessionStatus Status, DateTimeOffset? Since, DateTimeOffset? TurnStarted, int Subagents = 0);
 
 /// <summary>Reduces the lines cctokmon-hook.sh appends to &lt;session_id&gt;.events to the session's current status.</summary>
 public static class SessionEvents
@@ -13,16 +14,47 @@ public static class SessionEvents
     /// <summary>Applies the events in order. Lines that are not a complete event (a write in progress, foreign text) are skipped.</summary>
     public static SessionEventState Reduce(IEnumerable<string> lines)
     {
-        SessionEventState state = new(SessionStatus.None, null, null);
+        Tracking tracking = new(new SessionEventState(SessionStatus.None, null, null), [], false);
         foreach (string line in lines)
         {
             if (TryParse(line) is { } hookEvent)
-                state = Apply(state, hookEvent);
+                tracking = Apply(tracking, hookEvent);
         }
-        return state;
+        return tracking.State;
     }
 
-    private static SessionEventState Apply(SessionEventState state, HookEvent hookEvent)
+    // The subagent ids are what the 64 KB tail window can cut: a stop for an id it never saw is ignored.
+    private static Tracking Apply(Tracking tracking, HookEvent hookEvent)
+    {
+        SessionEventState state = tracking.State;
+        DateTimeOffset t = hookEvent.Time;
+        bool ended = state.Status == SessionStatus.Ended;
+        switch (hookEvent.Name)
+        {
+            case "SessionStart" when hookEvent.Source != "compact":
+            case "SessionEnd":
+                return Resolve(tracking, ApplyToStatus(state, hookEvent), []);
+            case "SubagentStart" when !ended && hookEvent.Agent is { } started:
+                return Resolve(tracking, state, tracking.Active.Add(started));
+            case "SubagentStop" when !ended && hookEvent.Agent is { } stopped && tracking.Active.Contains(stopped):
+                ImmutableHashSet<string> remaining = tracking.Active.Remove(stopped);
+                // The turn the main agent already ended is over once its last subagent is.
+                return remaining.IsEmpty && tracking.MainIdle
+                    ? Resolve(tracking, Enter(state, SessionStatus.Ready, t, state.TurnStarted), remaining)
+                    : Resolve(tracking, state, remaining);
+            case "Stop" when !ended && !tracking.Active.IsEmpty:
+                return Resolve(tracking with { MainIdle = true }, Enter(state, SessionStatus.Working, t, state.TurnStarted), tracking.Active);
+            case "UserPromptSubmit" or "PreToolUse" or "PostToolUse" or "PostToolUseFailure" when hookEvent.Agent is null && !ended:
+                return Resolve(tracking with { MainIdle = false }, ApplyToStatus(state, hookEvent), tracking.Active);
+            default:
+                return Resolve(tracking, ApplyToStatus(state, hookEvent), tracking.Active);
+        }
+    }
+
+    private static Tracking Resolve(Tracking tracking, SessionEventState state, ImmutableHashSet<string> active) =>
+        tracking with { State = state with { Subagents = active.Count }, Active = active, MainIdle = tracking.MainIdle && !active.IsEmpty };
+
+    private static SessionEventState ApplyToStatus(SessionEventState state, HookEvent hookEvent)
     {
         DateTimeOffset t = hookEvent.Time;
         bool ended = state.Status == SessionStatus.Ended;
@@ -85,6 +117,8 @@ public static class SessionEvents
         root.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } text
             ? text
             : null;
+
+    private sealed record Tracking(SessionEventState State, ImmutableHashSet<string> Active, bool MainIdle);
 
     private sealed record HookEvent(DateTimeOffset Time, string Name, string? Notification, string? Source, string? Agent);
 }
