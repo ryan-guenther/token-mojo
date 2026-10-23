@@ -67,6 +67,8 @@ cctokmon avoids this by hooking into Claude Code's **statusline API** — a feat
 ```bash
 brew install bash
 ```
+Under Bash 3 the scripts say so instead of failing quietly. `cctokmon`, `install.sh`, `uninstall.sh` and `tm` print an error and exit with status 1. The hook scripts print one line to stderr, log nothing and exit 0, so a session is never interrupted. The statusline script needs only Bash 3.2, so it keeps working under the system Bash on macOS. Claude Code runs the hooks with whichever `bash` is first in its `PATH`, so on macOS make sure that is the Homebrew one.
+
 jq and tput are available via Homebrew if missing:
 ```bash
 brew install jq ncurses
@@ -99,7 +101,7 @@ The installer will:
 1. Check all dependencies and offer to install any that are missing via your system package manager (apt / dnf / brew / winget)
 2. Copy your config to `~/.config/cctokmon/config`
 3. Symlink `cctokmon` to `~/.local/bin/cctokmon` (on Windows, a small launcher script, since Git Bash cannot reliably symlink)
-4. Copy the statusline companion script to `~/.claude/cctokmon-statusline.sh`
+4. Copy the statusline companion script to `~/.claude/cctokmon-statusline.sh` (creating `~/.claude` if Claude Code has not yet)
 5. Optionally configure the statusline bridge in `~/.claude/settings.json`
 6. Link `tm` to `~/.local/bin/tm` (a launcher on Windows; an existing `tm` that is not cctokmon's is left alone), see [Starting sessions with tm](#starting-sessions-with-tm)
 7. Copy the session status hook to `~/.claude/cctokmon-hook.sh` and optionally register it in `~/.claude/settings.json` (used by the TokenMojo Windows app, see [Session status](#session-status))
@@ -109,6 +111,8 @@ If `~/.local/bin` is not in your PATH, add this to your `~/.bashrc` or `~/.zshrc
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+Each prompt shows its default as the capital letter in `[Y/n]` or `[y/N]`. When there is no one to answer (input closed, for example `bash install.sh </dev/null`), the installer takes the default and carries on. Changes to `~/.claude/settings.json` are written through a temp file next to it, so the file's permissions are kept, a symlinked `settings.json` stays a symlink (the real file behind it is updated), and a failed edit leaves the original untouched.
 
 ---
 
@@ -145,7 +149,7 @@ Press `Ctrl+C` to exit cleanly.
 
 ### Bridge mode (recommended)
 
-The installer configures `cctokmon-statusline.sh` as your Claude Code statusline script by setting `statusLine` in `~/.claude/settings.json`. Claude Code calls this script on every interaction, passing a JSON payload via stdin. The script writes it atomically to `~/.claude/cctokmon-state.json`. cctokmon reads that file every `REFRESH_INTERVAL` seconds.
+The installer configures `cctokmon-statusline.sh` as your Claude Code statusline script by setting `statusLine` in `~/.claude/settings.json`. Claude Code calls this script on every interaction, passing a JSON payload via stdin. The script writes it atomically to `~/.claude/cctokmon-state.json`. cctokmon reads that file every `REFRESH_INTERVAL` seconds. The script's path is quoted inside the `command` string, so a home folder with spaces works. Re-running the installer rewrites an older unquoted entry to the quoted form without asking, and leaves a quoted one as it is.
 
 Data displayed in bridge mode:
 - Session cost (exact, from billing engine)
@@ -377,7 +381,7 @@ The file is read on every refresh. If it is not valid JSON or has a bad value, t
 bash uninstall.sh
 ```
 
-Removes the symlinks (or Windows launchers) at `~/.local/bin/cctokmon` and `~/.local/bin/tm` (a `tm` that is not cctokmon's is kept), the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook scripts at `~/.claude/cctokmon-hook.sh` and `~/.claude/cctokmon-worktree-init.sh`, and the `statusLine` entry and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
+Removes the symlinks (or Windows launchers) at `~/.local/bin/cctokmon` and `~/.local/bin/tm` (a `tm` that is not cctokmon's is kept), the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook scripts at `~/.claude/cctokmon-hook.sh` and `~/.claude/cctokmon-worktree-init.sh`, and the `statusLine` entry (only when it is cctokmon's own script, not a custom one) and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
 
 On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position) and `%APPDATA%\TokenMojo` (settings).
 
