@@ -28,9 +28,10 @@ internal static class WslProcess
         };
         foreach (string argument in arguments)
             startInfo.ArgumentList.Add(argument);
+        Process? process = null;
         try
         {
-            using Process process = Process.Start(startInfo)!;
+            process = Process.Start(startInfo)!;
             Stopwatch clock = Stopwatch.StartNew();
             Task<string> output = process.StandardOutput.ReadToEndAsync();
             // Its own task, so a command that never reads its input cannot hold the call past the deadline.
@@ -47,10 +48,17 @@ internal static class WslProcess
             }
             return new WslResult(process.ExitCode, output.Result);
         }
-        catch (Win32Exception)
+        // Win32Exception: WSL is not installed. The others: the process or a pipe failed under us (an output read that
+        // threw arrives wrapped in an AggregateException). Whatever the cause, there is no answer.
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException or AggregateException)
         {
-            // WSL is not installed.
+            Trace.TraceWarning("TokenMojo: wsl.exe call failed: {0}", e.Message);
+            if (process is not null) Kill(process);
             return null;
+        }
+        finally
+        {
+            process?.Dispose();
         }
     }
 
@@ -85,9 +93,11 @@ internal static class WslProcess
         {
             process.Kill(entireProcessTree: true);
         }
-        // It ended on its own between the deadline and the kill.
-        catch (InvalidOperationException)
+        // It ended on its own between the deadline and the kill (InvalidOperationException), a process in its tree
+        // could not be ended (AggregateException), or access was denied (Win32Exception). Either way it is as dead as it will get.
+        catch (Exception e) when (e is InvalidOperationException or AggregateException or Win32Exception)
         {
+            Trace.TraceWarning("TokenMojo: could not end wsl.exe: {0}", e.Message);
         }
     }
 }
