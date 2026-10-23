@@ -12,6 +12,12 @@
 # SessionStart stdout is added to Claude's context, so everything this prints goes to stderr.
 # It always exits 0, so a failure can never stop a session from starting.
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    echo "cctokmon-worktree-init: bash 4+ required, found ${BASH_VERSION:-unknown}; submodules not initialised" >&2
+    exit 0
+fi
+
 exec >&2
 
 command -v jq >/dev/null 2>&1 || exit 0

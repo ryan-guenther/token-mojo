@@ -79,7 +79,8 @@ bash windows/build.sh [target-dir]
 
 ### Installer (`install.sh`)
 
-- Checks all deps (bash 4+, jq, tput, awk) before touching anything.
+- Checks all deps (bash 4+, jq, tput, awk) before touching anything. The bash check is the first statement of the script, before `set -e` and any bash-4 syntax (`declare -A`, `${x,,}`, `mapfile`), written so that bash 3.2 can parse it: `[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]`, no `[[ ]]`.
+- Every script that needs bash 4 opens with that same guard and fails visibly: `install.sh`, `uninstall.sh` and `cctokmon-tm.sh` print an error to stderr and exit 1; `cctokmon-statusline.sh` prints `cctokmon: bash 4+ required` to stdout (Claude shows it) and exits 0; the two hook scripts print one line to stderr, never stdout, and exit 0 so a session is never broken. `cctokmon.sh` keeps its own `check_deps` check.
 - If deps are missing: detects package manager (brew / apt / dnf / yum / winget), shows what it will install, prompts once, then re-verifies.
 - Symlinks `cctokmon.sh` to `~/.local/bin/cctokmon`. Under Git Bash on Windows (`uname -s` is `MINGW*`/`MSYS*`/`CYGWIN*`) it writes a small launcher script instead: `ln -s` there silently copies the file unless Developer Mode is on, and a copy cannot find `install.sh` for `--setup`. `uninstall.sh` removes either form.
 - On Windows only jq needs installing (Git Bash ships tput and awk); winget's links dir is added to `PATH` for the re-verify, since the running shell predates it.

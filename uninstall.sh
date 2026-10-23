@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # cctokmon uninstaller
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'cctokmon uninstaller: bash 4.0+ required, found %s.\n' "${BASH_VERSION:-unknown}" >&2
+    printf 'macOS ships bash 3.2. Install a current one (brew install bash) and run this script with it.\n' >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 BIN_DIR="$HOME/.local/bin"

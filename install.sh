@@ -2,6 +2,13 @@
 # cctokmon installer
 # Installs cctokmon and optionally configures the Claude Code statusline bridge.
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'cctokmon installer: bash 4.0+ required, found %s.\n' "${BASH_VERSION:-unknown}" >&2
+    printf 'macOS ships bash 3.2. Install a current one (brew install bash) and run this script with it.\n' >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -133,14 +140,6 @@ pkg_name() {
 printf '\n%scctokmon installer%s\n' "${BOLD}${CYAN}" "${R}"
 printf '%s\n\n' "──────────────────"
 
-# Bash 4+ — can't auto-install, must exit immediately
-if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-    err "Bash 4.0+ required. You have ${BASH_VERSION}."
-    if [[ "$OS" == "Darwin" ]]; then
-        info "Install: brew install bash"
-    fi
-    exit 1
-fi
 ok "Bash ${BASH_VERSION}"
 
 # Check remaining deps, collecting any that are missing

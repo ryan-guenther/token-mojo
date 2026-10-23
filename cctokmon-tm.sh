@@ -8,6 +8,12 @@
 #
 # Run: tm --help
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'tm: bash 4.0+ required, found %s. On macOS: brew install bash\n' "${BASH_VERSION:-unknown}" >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 usage() {
