@@ -5,13 +5,6 @@ public static class WslPaths
     public const string DefaultShareRoot = @"\\wsl.localhost";
     private static readonly string[] ShareRoots = [DefaultShareRoot, @"\\wsl$"];
 
-    /// <summary>Where `tm` is installed under a home folder, on the distro share; null when the home folder is not known.</summary>
-    public static string? TmInstallPath(string distro, string? home, string shareRoot = DefaultShareRoot)
-    {
-        if (home is null) return null;
-        return SharePath(distro, $"{home}/.local/bin/tm", shareRoot);
-    }
-
     /// <summary>The Linux path of a folder picked on the distro's share, in either share spelling; null for any other path.</summary>
     public static string? ToLinuxPath(string windowsPath, string distro)
     {

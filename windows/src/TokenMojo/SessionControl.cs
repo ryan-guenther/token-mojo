@@ -144,12 +144,12 @@ internal static class SessionControl
         }
     }
 
-    /// <summary>Why `tm` must not be run for the user, or null when it is cctokmon's. Reads the distro share, so off the UI thread.</summary>
+    /// <summary>Why `tm` must not be run for the user, or null when it is cctokmon's. Asks the distro, so off the UI thread.</summary>
     internal static string? TmProblem(string distro, string user, string? home)
     {
-        // Without a known home folder there is nowhere to look, so the launch is left to fail visibly in the terminal.
-        if (WslPaths.TmInstallPath(distro, home) is not { } path) return null;
-        return TmInstall.ProblemText(TmInstall.Inspect(path), user, distro, home!);
+        // Without a known user or home folder there is nothing to ask about, so the launch is left to fail visibly in the terminal.
+        if (user.Length == 0 || home is null) return null;
+        return TmInstall.ProblemText(new WslTmInspector().Inspect(distro, user), user, distro, home);
     }
 
     private static bool FocusWindow(TerminalWindow window)

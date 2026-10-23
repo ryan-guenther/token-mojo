@@ -1,8 +1,13 @@
-using System.Text;
-
 namespace TokenMojo.Core;
 
-public enum TmState { Ours, Missing, Foreign }
+/// <summary>Unchecked: the distro could not be asked, which says nothing about the tm.</summary>
+public enum TmState { Ours, Missing, Foreign, Unchecked }
+
+/// <summary>Asks a running distro about the `tm` of a user.</summary>
+public interface ITmInspector
+{
+    TmState Inspect(string distro, string user);
+}
 
 /// <summary>Whether the `tm` at ~/.local/bin/tm is the one install.sh puts there, which a foreign `tm` must never be run in place of.</summary>
 public static class TmInstall
@@ -10,29 +15,25 @@ public static class TmInstall
     // install.sh's own markers: the Windows launcher's second line, and the header of cctokmon-tm.sh itself.
     private const string LauncherMarker = "# tm launcher";
     private const string ScriptMarker = "# cctokmon-tm.sh";
-    // Both markers are in the first lines; a foreign tm may be a large binary.
-    private const int HeaderBytes = 4096;
+    private const int MissingExitCode = 3;
+    private const int NotAFileExitCode = 4;
 
     /// <summary>
-    /// Reads the file as the distro share shows it. install.sh tells a symlink by its target, which the share does not
-    /// reliably expose, but it serves a symlink's target content, which is cctokmon-tm.sh and carries the marker.
-    /// A file that cannot be read counts as missing: the distro may have stopped.
+    /// For `sh -c` as the user, inside the distro, where a symlink's absolute target resolves (over the share it does not).
+    /// Prints the first 4 KB of the file, following the link, which holds both markers; a foreign tm may be a large binary.
+    /// Exits 3 when there is no tm, 4 when it is not a regular file.
     /// </summary>
-    public static TmState Inspect(string path)
+    public const string InspectScript =
+        "f=\"$HOME/.local/bin/tm\"; [ -e \"$f\" ] || exit 3; [ -f \"$f\" ] || exit 4; head -c 4096 -- \"$f\"";
+
+    /// <summary>Reads what <see cref="InspectScript"/> did; an exit code it does not use means the command itself failed.</summary>
+    public static TmState FromScript(int exitCode, string output) => exitCode switch
     {
-        try
-        {
-            if (Directory.Exists(path)) return TmState.Foreign;
-            using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            byte[] header = new byte[HeaderBytes];
-            int read = stream.Read(header, 0, header.Length);
-            return Classify(Encoding.UTF8.GetString(header, 0, read));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return TmState.Missing;
-        }
-    }
+        0 => Classify(output),
+        MissingExitCode => TmState.Missing,
+        NotAFileExitCode => TmState.Foreign,
+        _ => TmState.Unchecked,
+    };
 
     public static TmState Classify(string content)
     {
@@ -47,6 +48,7 @@ public static class TmInstall
         TmState.Ours => null,
         TmState.Missing =>
             $"Could not find tm for {user} in {distro}. Run install.sh in that distro, or try again if the distro was just starting.",
+        TmState.Unchecked => $"Could not check tm for {user} in {distro}: the distro did not answer. Try again in a moment.",
         _ => $"The tm for {user} in {distro} ({home}/.local/bin/tm) is not cctokmon's, so install.sh left it alone and TokenMojo did not run it. "
             + "Move it aside and run install.sh again.",
     };

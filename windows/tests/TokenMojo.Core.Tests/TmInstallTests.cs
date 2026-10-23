@@ -2,14 +2,10 @@ using TokenMojo.Core;
 
 namespace TokenMojo.Core.Tests;
 
-public sealed class TmInstallTests : IDisposable
+public sealed class TmInstallTests
 {
     private const string WindowsLauncher = "#!/usr/bin/env bash\n# tm launcher\nexec bash '/home/alice/token-mojo/cctokmon-tm.sh' \"$@\"\n";
     private const string TmScript = "#!/usr/bin/env bash\n# cctokmon-tm.sh — start or resume a Claude Code session in this terminal tab\n\nset -euo pipefail\n";
-
-    private readonly TempDir _temp = new();
-
-    public void Dispose() => _temp.Dispose();
 
     [Theory]
     [InlineData(WindowsLauncher)]
@@ -33,41 +29,43 @@ public sealed class TmInstallTests : IDisposable
     }
 
     [Fact]
-    public void Inspect_FileThere_IsClassifiedByItsContent()
+    public void FromScript_ExitedZero_IsClassifiedByWhatItPrinted()
     {
-        // Arrange
-        string ours = Path.Combine(_temp.Path, "ours");
-        string foreign = Path.Combine(_temp.Path, "foreign");
-        File.WriteAllText(ours, WindowsLauncher);
-        File.WriteAllText(foreign, "#!/bin/sh\n");
-
         // Act / Assert
-        Assert.Equal((TmState.Ours, TmState.Foreign), (TmInstall.Inspect(ours), TmInstall.Inspect(foreign)));
+        Assert.Equal((TmState.Ours, TmState.Foreign), (TmInstall.FromScript(0, TmScript), TmInstall.FromScript(0, "#!/bin/sh\n")));
     }
 
     [Fact]
-    public void Inspect_NoFile_IsMissing()
+    public void FromScript_NoTm_IsMissing()
     {
         // Act / Assert
-        Assert.Equal(TmState.Missing, TmInstall.Inspect(Path.Combine(_temp.Path, "tm")));
+        Assert.Equal(TmState.Missing, TmInstall.FromScript(3, ""));
     }
 
     [Fact]
-    public void Inspect_LargeFile_OnlyItsStartIsRead()
+    public void FromScript_TmIsNotARegularFile_IsForeign()
     {
-        // Arrange
-        string path = Path.Combine(_temp.Path, "tm");
-        File.WriteAllText(path, "#!/usr/bin/env bash\n# tm launcher\n" + new string('x', 1_000_000));
-
         // Act / Assert
-        Assert.Equal(TmState.Ours, TmInstall.Inspect(path));
+        Assert.Equal(TmState.Foreign, TmInstall.FromScript(4, ""));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(-1)]
+    [InlineData(127)]
+    public void FromScript_CommandItselfFailed_IsUncheckedNotMissing(int exitCode)
+    {
+        // Act / Assert
+        Assert.Equal(TmState.Unchecked, TmInstall.FromScript(exitCode, ""));
     }
 
     [Fact]
-    public void Inspect_PathIsADirectory_IsForeign()
+    public void InspectScript_FollowsTheLinkAndReadsOnlyTheStart()
     {
         // Act / Assert
-        Assert.Equal(TmState.Foreign, TmInstall.Inspect(_temp.MakeDir("tm")));
+        Assert.Equal(
+            "f=\"$HOME/.local/bin/tm\"; [ -e \"$f\" ] || exit 3; [ -f \"$f\" ] || exit 4; head -c 4096 -- \"$f\"",
+            TmInstall.InspectScript);
     }
 
     [Fact]
@@ -85,6 +83,16 @@ public sealed class TmInstallTests : IDisposable
 
         // Assert
         Assert.Equal("Could not find tm for alice in Ubuntu. Run install.sh in that distro, or try again if the distro was just starting.", text);
+    }
+
+    [Fact]
+    public void ProblemText_Unchecked_SaysItCouldNotBeCheckedRatherThanMissing()
+    {
+        // Act
+        string? text = TmInstall.ProblemText(TmState.Unchecked, "alice", "Ubuntu", "/home/alice");
+
+        // Assert
+        Assert.Equal("Could not check tm for alice in Ubuntu: the distro did not answer. Try again in a moment.", text);
     }
 
     [Fact]

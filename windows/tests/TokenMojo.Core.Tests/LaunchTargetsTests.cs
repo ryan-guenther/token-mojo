@@ -117,6 +117,20 @@ public sealed class LaunchTargetsTests
     }
 
     [Fact]
+    public void ChooseUser_DefaultUsersTmCouldNotBeChecked_ReportsThatInsteadOfFallingBackToAnotherUser()
+    {
+        // Arrange
+        ClaudeSource[] sources = [Source("alice"), Source("bob", isDefault: true)];
+
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser(sources, "Ubuntu", source => source.User == "bob" ? TmState.Unchecked : TmState.Ours);
+
+        // Assert
+        Assert.Null(choice.Source);
+        Assert.StartsWith("Could not check tm for bob in Ubuntu", choice.Problem);
+    }
+
+    [Fact]
     public void ChooseUser_DistroNameCaseDiffersFromWsl_StillMatches()
     {
         // Act

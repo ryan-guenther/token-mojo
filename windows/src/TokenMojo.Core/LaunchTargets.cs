@@ -35,6 +35,8 @@ public static class LaunchTargets
             ClaudeSource candidate = candidates[index];
             TmState state = tmState(candidate);
             if (index == 0) first = state;
+            // Not knowing is not a reason to start as someone else.
+            if (state == TmState.Unchecked) return new LaunchUser(null, TmInstall.ProblemText(state, candidate.User!, distro, candidate.Home!), null);
             if (state != TmState.Ours) continue;
             return new LaunchUser(candidate, null, index > 0 && candidates[0].IsDefaultUser ? NoteFor(candidate, candidates[0]) : null);
         }

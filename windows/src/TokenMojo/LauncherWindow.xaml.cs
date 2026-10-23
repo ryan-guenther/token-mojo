@@ -118,8 +118,9 @@ public partial class LauncherWindow : Window
         string distro = _distro!;
         Settings settings = _settings!;
         IReadOnlyList<ClaudeSource> sources = _sources;
-        // Reads each candidate's tm over the share.
-        LaunchUser choice = await Task.Run(() => LaunchTargets.ChooseUser(sources, distro, source => TmInstall.Inspect(WslPaths.TmInstallPath(distro, source.Home)!)));
+        WslTmInspector inspector = new();
+        // Asks the distro about each candidate's tm.
+        LaunchUser choice = await Task.Run(() => LaunchTargets.ChooseUser(sources, distro, source => inspector.Inspect(distro, source.User!)));
         if (_closed || generation != _generation) return;
         string? home = choice.Source?.Home;
         _user = choice.Source?.User;
