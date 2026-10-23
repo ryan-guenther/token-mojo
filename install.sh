@@ -48,6 +48,39 @@ is_our_tm() {
     fi
 }
 
+# Path of the real file behind PATH, following symlinks without GNU readlink -f (stock macOS lacks it)
+resolve_symlinks() {
+    local path="$1" link hops=0
+    while [[ -L "$path" ]]; do
+        (( ++hops <= 40 )) || { err "Too many symbolic links resolving $1"; return 1; }
+        link=$(readlink "$path")
+        case "$link" in
+            /*) path="$link" ;;
+            *) path="$(dirname "$path")/$link" ;;
+        esac
+    done
+    printf '%s' "$path"
+}
+
+# Rewrites settings.json with jq, passing it the given arguments. The result is built in a temp file next to
+# the real file (so the final mv is a same-filesystem rename), cp -p gives it the original's mode, and a
+# symlinked settings.json is written through, so the symlink stays. On any failure the original is untouched
+# and the temp file is removed.
+SETTINGS_TMP=""
+trap '[[ -z "$SETTINGS_TMP" ]] || rm -f "$SETTINGS_TMP"' EXIT
+write_settings() {
+    local target
+    target=$(resolve_symlinks "$SETTINGS_FILE") || return 1
+    SETTINGS_TMP=$(mktemp "$(dirname "$target")/.settings.json.XXXXXX") || return 1
+    if cp -p "$target" "$SETTINGS_TMP" && jq "$@" "$target" > "$SETTINGS_TMP" && mv "$SETTINGS_TMP" "$target"; then
+        SETTINGS_TMP=""
+        return 0
+    fi
+    rm -f "$SETTINGS_TMP"
+    SETTINGS_TMP=""
+    return 1
+}
+
 # ── Detect OS and package manager ──────────────────────────────────────────────
 OS="$(uname -s)"
 IS_WINDOWS=0
@@ -292,10 +325,9 @@ if [[ "${configure_sl:-0}" -eq 1 ]]; then
         printf '{}' > "$SETTINGS_FILE"
     fi
 
-    # Update with jq
-    local_tmp=$(mktemp)
-    jq --arg sl "$STATUSLINE_DEST" '.statusLine = {"type": "command", "command": $sl}' "$SETTINGS_FILE" > "$local_tmp"
-    mv "$local_tmp" "$SETTINGS_FILE"
+    # shellcheck disable=SC2016 # the single-quoted argument is a jq program
+    write_settings --arg sl "$STATUSLINE_DEST" '.statusLine = {"type": "command", "command": $sl}' ||
+        { err "Cannot update ${SETTINGS_FILE}; it was left unchanged."; exit 1; }
     ok "statusLine set in ${SETTINGS_FILE}"
 fi
 
@@ -335,8 +367,8 @@ if [[ "$configure_hooks" -eq 1 ]]; then
         printf '{}' > "$SETTINGS_FILE"
     fi
 
-    local_tmp=$(mktemp)
-    jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" \
+    # shellcheck disable=SC2016 # the single-quoted argument is a jq program
+    write_settings --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" \
         --arg init "$WORKTREE_INIT_COMMAND" --argjson init_timeout "$WORKTREE_INIT_TIMEOUT" '
         reduce $events[] as $e (.;
             if ([.hooks[$e][]?.hooks[]?.command] | index($cmd)) then .
@@ -346,8 +378,7 @@ if [[ "$configure_hooks" -eq 1 ]]; then
           else .hooks.SessionStart = ((.hooks.SessionStart // [])
               + [{"matcher": "startup", "hooks": [{"type": "command", "command": $init, "timeout": $init_timeout}]}])
           end
-    ' "$SETTINGS_FILE" > "$local_tmp"
-    mv "$local_tmp" "$SETTINGS_FILE"
+    ' || { err "Cannot update ${SETTINGS_FILE}; it was left unchanged."; exit 1; }
     ok "Hooks registered in ${SETTINGS_FILE}"
 fi
 

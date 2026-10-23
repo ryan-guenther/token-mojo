@@ -26,6 +26,39 @@ fi
 ok()   { printf '%s✓%s %s\n' "${GREEN}" "${R}" "$*"; }
 warn() { printf '%s⚠%s  %s\n' "${YELLOW}" "${R}" "$*"; }
 
+# Path of the real file behind PATH, following symlinks without GNU readlink -f (stock macOS lacks it)
+resolve_symlinks() {
+    local path="$1" link hops=0
+    while [[ -L "$path" ]]; do
+        (( ++hops <= 40 )) || { printf 'Too many symbolic links resolving %s\n' "$1" >&2; return 1; }
+        link=$(readlink "$path")
+        case "$link" in
+            /*) path="$link" ;;
+            *) path="$(dirname "$path")/$link" ;;
+        esac
+    done
+    printf '%s' "$path"
+}
+
+# Rewrites settings.json with jq, passing it the given arguments. The result is built in a temp file next to
+# the real file (so the final mv is a same-filesystem rename), cp -p gives it the original's mode, and a
+# symlinked settings.json is written through, so the symlink stays. On any failure the original is untouched
+# and the temp file is removed.
+SETTINGS_TMP=""
+trap '[[ -z "$SETTINGS_TMP" ]] || rm -f "$SETTINGS_TMP"' EXIT
+write_settings() {
+    local target
+    target=$(resolve_symlinks "$SETTINGS_FILE") || return 1
+    SETTINGS_TMP=$(mktemp "$(dirname "$target")/.settings.json.XXXXXX") || return 1
+    if cp -p "$target" "$SETTINGS_TMP" && jq "$@" "$target" > "$SETTINGS_TMP" && mv "$SETTINGS_TMP" "$target"; then
+        SETTINGS_TMP=""
+        return 0
+    fi
+    rm -f "$SETTINGS_TMP"
+    SETTINGS_TMP=""
+    return 1
+}
+
 printf '\n%scctokmon uninstaller%s\n%s\n\n' "${BOLD}" "${R}" "────────────────────"
 
 # Remove our hook entries from settings.json first, keeping everyone else's. A settings file jq cannot
@@ -50,8 +83,8 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     # A native jq.exe under Git Bash ends its lines with CRLF
     has_hooks=${has_hooks%$'\r'}
     if [[ "$has_hooks" == "true" ]]; then
-        local_tmp=$(mktemp)
-        if ! jq --arg cmd "$HOOK_COMMAND" --arg init "$WORKTREE_INIT_COMMAND" --argjson events "$HOOK_EVENTS" '
+        # shellcheck disable=SC2016 # the single-quoted argument is a jq program
+        if ! write_settings --arg cmd "$HOOK_COMMAND" --arg init "$WORKTREE_INIT_COMMAND" --argjson events "$HOOK_EVENTS" '
             def ours_cmd: . == $cmd or . == $init;
             reduce $events[] as $e (.;
                 if .hooks[$e] == null then .
@@ -62,13 +95,12 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
                 end
                 | if .hooks[$e] == [] then del(.hooks[$e]) else . end)
             | if .hooks == {} then del(.hooks) else . end
-        ' "$SETTINGS_FILE" > "$local_tmp" 2>"$jq_error"; then
+        ' 2>"$jq_error"; then
             printf 'Cannot process %s, so nothing was removed:\n' "$SETTINGS_FILE" >&2
             cat "$jq_error" >&2
-            rm -f "$jq_error" "$local_tmp"
+            rm -f "$jq_error"
             exit 1
         fi
-        mv "$local_tmp" "$SETTINGS_FILE"
         ok "Removed session status hooks from ${SETTINGS_FILE}"
     fi
     rm -f "$jq_error"
@@ -128,9 +160,8 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     # A native jq.exe under Git Bash ends its lines with CRLF
     sl=${sl%$'\r'}
     if [[ "$sl" == *"cctokmon"* ]]; then
-        local_tmp=$(mktemp)
-        jq 'del(.statusLine)' "$SETTINGS_FILE" > "$local_tmp"
-        mv "$local_tmp" "$SETTINGS_FILE"
+        write_settings 'del(.statusLine)' ||
+            { printf 'Cannot update %s; it was left unchanged.\n' "$SETTINGS_FILE" >&2; exit 1; }
         ok "Removed statusLine from ${SETTINGS_FILE}"
     fi
 fi
