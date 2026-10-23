@@ -54,6 +54,8 @@ public partial class LauncherWindow : Window
         WindowChrome.Apply(this, round: false);
         FolderBox.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler(OnFolderTextChanged));
         Loaded += async (_, _) => await InitializeAsync();
+        // A launch in flight is never half-abandoned: the window stays until it has finished.
+        Closing += (_, e) => e.Cancel = _starting;
         Closed += (_, _) => _closed = true;
     }
 
@@ -117,28 +119,44 @@ public partial class LauncherWindow : Window
         int generation = ++_generation;
         string distro = _distro!;
         Settings settings = _settings!;
-        IReadOnlyList<ClaudeSource> sources = _sources;
-        WslTmInspector inspector = new();
-        // Asks the distro about each candidate's tm.
-        LaunchUser choice = await Task.Run(() => LaunchTargets.ChooseUser(sources, distro, source => inspector.Inspect(distro, source.User!)));
+        // Nothing of the previous distro may be used to start a session in this one.
+        _user = null;
+        _home = null;
+        _userNote = null;
+        _userProblem = null;
+        StartButton.IsEnabled = false;
+        LaunchUser choice = await ChooseUserAsync(distro);
         if (_closed || generation != _generation) return;
-        string? home = choice.Source?.Home;
-        _user = choice.Source?.User;
-        _home = home;
-        _userNote = choice.Note;
-        _userProblem = choice.Problem;
         _repos = [];
-        HideError();
-        if (choice.Problem is not null) ShowError(choice.Problem);
-        // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
-        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, []));
-        ApplyHint();
+        ApplyUser(choice, distro);
         StartButton.IsEnabled = true;
 
+        string? home = _home;
         IReadOnlyList<RepoInfo> repos = await Task.Run(() => RepoScanner.Scan(distro, home, settings.RepoRoots));
         if (_closed || generation != _generation) return;
         _repos = repos;
         ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, repos));
+        ApplyHint();
+    }
+
+    // Asks the distro about each candidate's tm.
+    private Task<LaunchUser> ChooseUserAsync(string distro)
+    {
+        IReadOnlyList<ClaudeSource> sources = _sources;
+        WslTmInspector inspector = new();
+        return Task.Run(() => LaunchTargets.ChooseUser(sources, distro, source => inspector.Inspect(distro, source.User!)));
+    }
+
+    // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
+    private void ApplyUser(LaunchUser choice, string distro)
+    {
+        _user = choice.Source?.User;
+        _home = choice.Source?.Home;
+        _userNote = choice.Note;
+        _userProblem = choice.Problem;
+        HideError();
+        if (choice.Problem is not null) ShowError(choice.Problem);
+        ShowFolders(FolderList.Build(_settings!.DefaultFolder, distro, _home, _sessions, _repos));
         ApplyHint();
     }
 
@@ -194,17 +212,13 @@ public partial class LauncherWindow : Window
             ShowError(WorktreeNameMissingText);
             return;
         }
-        if (_user is not { } user)
-        {
-            ShowError(_userProblem ?? "No user to start the session as.");
-            return;
-        }
-        LaunchRequest request = new(distro, user, folder, worktree, PromptBox.Text, _home);
         _starting = true;
         StartButton.IsEnabled = false;
-        string? error = await Task.Run(() => TryLaunch(request));
+        CancelButton.IsEnabled = false;
+        string? error = await StartSessionAsync(distro, folder, worktree);
         _starting = false;
         if (_closed) return;
+        CancelButton.IsEnabled = true;
         if (error is null)
         {
             Close();
@@ -215,6 +229,21 @@ public partial class LauncherWindow : Window
     }
 
     // Returns what to show the user when the session could not be started, else null.
+    private async Task<string?> StartSessionAsync(string distro, string folder, string? worktree)
+    {
+        if (_user is null)
+        {
+            // A check that failed (or found nothing) when the window opened must not stick: Start asks again.
+            int generation = _generation;
+            LaunchUser choice = await ChooseUserAsync(distro);
+            if (_closed || generation != _generation) return "The distro changed; press Start again.";
+            ApplyUser(choice, distro);
+            if (choice.Source is null) return choice.Problem;
+        }
+        LaunchRequest request = new(distro, _user!, folder, worktree, PromptBox.Text, _home);
+        return await Task.Run(() => TryLaunch(request));
+    }
+
     private static string? TryLaunch(LaunchRequest request)
     {
         try
@@ -236,7 +265,7 @@ public partial class LauncherWindow : Window
 
     private async void OnStart(object sender, RoutedEventArgs e) => await StartAsync();
 
-    // IsCancel only closes a window shown with ShowDialog, and this one is shown with Show. Closing mid-launch is what the X does too.
+    // IsCancel only closes a window shown with ShowDialog, and this one is shown with Show. Closing is refused while a launch is in flight.
     private void OnCancel(object sender, RoutedEventArgs e) => Close();
 
     // Enter starts; Shift+Enter falls through to the box, which adds a line.
