@@ -115,7 +115,7 @@ bash windows/build.sh [target-dir]
 
 - `tm [--wt NAME] [--prompt-file PATH] [--] [prompt...]` generates a session id, prints the OSC 0 title `TM <name> <id8>` (id8 is the first 8 characters of the id; name is `--wt` or the folder), then `exec`s `claude --session-id <id> -n <name> [-w NAME] [-- prompt]`. `tm --resume <id>` tags the tab the same way and runs `claude --resume <id>`.
 - It exports `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, because Claude Code otherwise rewrites the title; this also turns off Claude's own title updates and terminal status reports in that session.
-- `--prompt-file` reads the prompt, deletes the file, and fails if it is missing. Bad arguments (unknown flag, missing value, a worktree name outside `[A-Za-z0-9._-]`) print usage to stderr and exit 2.
+- `--prompt-file` reads the prompt and deletes the file after argument validation and before any check that can exit (including the `claude` lookup); a failed delete is a warning, and a missing file is an error. Each run also deletes `~/.claude/cctokmon-launch/*.txt` older than a day. Bad arguments (unknown flag, missing value, a worktree name outside `[A-Za-z0-9._-]`) print usage to stderr and exit 2.
 - Resuming does not depend on the folder: `claude --resume <id>` finds the session from the repository root, or any folder, after its worktree was removed (it continues without the worktree).
 
 ### Windows tray app (`windows/`)

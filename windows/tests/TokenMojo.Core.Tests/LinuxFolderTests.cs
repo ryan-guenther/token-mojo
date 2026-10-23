@@ -15,6 +15,10 @@ public sealed class LinuxFolderTests
     [InlineData("~other/x", false)]
     [InlineData(@"C:\work", false)]
     [InlineData("/home/a\nb", false)]
+    [InlineData("/home/a\"b", false)]
+    [InlineData("~/a\\b", false)]
+    [InlineData("/home/a;b", true)]
+    [InlineData("/home/it's", true)]
     [InlineData(null, false)]
     public void IsValid_FolderStartsWithHomeOrRoot_OnlyThenIsAccepted(string? folder, bool expected)
     {

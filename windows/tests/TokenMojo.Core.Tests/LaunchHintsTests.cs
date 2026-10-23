@@ -51,6 +51,7 @@ public sealed class LaunchHintsTests
         // Assert
         Assert.Equal("ops-7", hint.Worktree);
         Assert.Null(hint.Folder);
+        Assert.False(hint.UseWorktree);
     }
 
     [Theory]
@@ -117,6 +118,7 @@ public sealed class LaunchHintsTests
         // Assert
         Assert.Null(hint.Folder);
         Assert.Equal("pr-3", hint.Worktree);
+        Assert.False(hint.UseWorktree);
     }
 
     [Theory]

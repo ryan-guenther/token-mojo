@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.Versioning;
 using TokenMojo.Core;
 
 namespace TokenMojo.Core.Tests;
@@ -76,6 +77,25 @@ public sealed class SessionLauncherTests : IDisposable
     }
 
     [Fact]
+    public void Launch_TerminalFailsAndThePromptFileCannotBeDeleted_RethrowsTheTerminalFailure()
+    {
+        // Arrange
+        LaunchRequest request = new("Ubuntu", "alice", "~", null, "hello");
+        List<IDisposable> locks = new();
+
+        // Act
+        Win32Exception error = Assert.Throws<Win32Exception>(() => SessionLauncher.Launch(request, _temp.Path, _ =>
+        {
+            locks.Add(PreventDeletes(Directory.GetFiles(_temp.Path).Single()));
+            throw new Win32Exception("wt.exe not found");
+        }));
+        foreach (IDisposable held in locks) held.Dispose();
+
+        // Assert
+        Assert.Contains("wt.exe", error.Message);
+    }
+
+    [Fact]
     public void Launch_InvalidWorktree_ThrowsBeforeWritingAnything()
     {
         // Arrange
@@ -88,5 +108,26 @@ public sealed class SessionLauncherTests : IDisposable
         // Assert
         Assert.False(started);
         Assert.Empty(Directory.GetFiles(_temp.Path));
+    }
+
+    // A held-open file cannot be deleted on Windows; elsewhere deleting needs write access to the folder.
+    private IDisposable PreventDeletes(string file)
+    {
+        if (OperatingSystem.IsWindows())
+            return new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None);
+        return PreventDeletesInFolder();
+    }
+
+    [UnsupportedOSPlatform("windows")]
+    private IDisposable PreventDeletesInFolder()
+    {
+        UnixFileMode previous = File.GetUnixFileMode(_temp.Path);
+        File.SetUnixFileMode(_temp.Path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        return new Restore(() => File.SetUnixFileMode(_temp.Path, previous));
+    }
+
+    private sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
     }
 }

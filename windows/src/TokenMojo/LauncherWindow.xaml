@@ -176,7 +176,8 @@
                  VerticalContentAlignment="Top" AutomationProperties.Name="Prompt"
                  ToolTip="Enter starts the session. Shift+Enter adds a line."
                  PreviewKeyDown="OnPromptKeyDown" TextChanged="OnPromptChanged" />
-        <TextBlock x:Name="HintText" Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
+        <TextBlock x:Name="HintText" Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed"
+                   AutomationProperties.LiveSetting="Polite" />
 
         <TextBlock x:Name="DistroCaption" Style="{StaticResource Caption}" Text="WSL distro" Margin="0,12,0,4" Visibility="Collapsed" />
         <ComboBox x:Name="DistroBox" Visibility="Collapsed" AutomationProperties.Name="WSL distro"
@@ -197,7 +198,7 @@
         </DockPanel>
 
         <TextBlock x:Name="ErrorText" Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{DynamicResource CriticalBrush}"
-                   Visibility="Collapsed" />
+                   Visibility="Collapsed" AutomationProperties.LiveSetting="Assertive" />
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="Cancel" IsCancel="True" Margin="0,0,8,0" />

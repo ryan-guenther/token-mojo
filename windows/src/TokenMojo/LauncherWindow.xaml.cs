@@ -131,12 +131,19 @@ public partial class LauncherWindow : Window
         ApplyHint();
     }
 
+    // Only the list changes: replacing the items can clear an editable box, and the user may be typing in it
+    // while the scan finishes, so the text and the caret are put back as they were.
     private void ShowFolders(IReadOnlyList<string> folders)
     {
+        FolderBox.ApplyTemplate();
+        TextBox? editor = FolderBox.Template.FindName("PART_EditableTextBox", FolderBox) as TextBox;
         string text = FolderBox.Text;
+        int selectionStart = editor?.SelectionStart ?? 0;
+        int selectionLength = editor?.SelectionLength ?? 0;
         _applying = true;
         FolderBox.ItemsSource = folders;
-        FolderBox.Text = _folderChosen ? text : folders[0];
+        if (FolderBox.Text != text) FolderBox.Text = text;
+        editor?.Select(selectionStart, selectionLength);
         _applying = false;
     }
 

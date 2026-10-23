@@ -9,7 +9,8 @@ public sealed record LaunchHint(string? Folder, string? Worktree, string? Descri
 {
     public static readonly LaunchHint None = new(null, null, null);
 
-    public bool UseWorktree => Worktree is not null;
+    /// <summary>Whether to tick the worktree box: only when the folder is known too, since a worktree needs the right repository.</summary>
+    public bool UseWorktree => Worktree is not null && Folder is not null;
 }
 
 /// <summary>A git repository found on a distro: its folder as Linux sees it and the URL of its origin remote.</summary>

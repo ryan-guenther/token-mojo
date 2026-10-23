@@ -10,7 +10,8 @@ public static class LinuxFolder
     public static bool IsValid(string? folder) =>
         folder is not null
         && (folder == Home || folder.StartsWith("~/", StringComparison.Ordinal) || folder.StartsWith('/'))
-        && !folder.Any(char.IsControl);
+        // A quote or backslash would be read by wt.exe's and wsl.exe's argument parsing before it reaches the shell.
+        && !folder.Any(character => char.IsControl(character) || character is '"' or '\\');
 
     /// <summary>The absolute path of a folder; null when it starts with a tilde and there is no known user.</summary>
     public static string? Expand(string folder, string? user)

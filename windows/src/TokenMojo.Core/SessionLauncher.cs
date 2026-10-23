@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace TokenMojo.Core;
 
 /// <param name="Worktree">A name for `claude -w`; null starts in the folder itself.</param>
@@ -24,7 +26,20 @@ public static class SessionLauncher
         finally
         {
             // Once started, tm owns the file and deletes it.
-            if (!started && promptFile is not null) LaunchPrompt.Delete(promptFile);
+            if (!started && promptFile is not null) TryDelete(promptFile);
+        }
+    }
+
+    // The failure being reported is the one that stopped the launch, so one while cleaning up must not replace it.
+    private static void TryDelete(string promptFile)
+    {
+        try
+        {
+            LaunchPrompt.Delete(promptFile);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning("TokenMojo: cannot delete prompt file {0}: {1}", promptFile, e.Message);
         }
     }
 }
