@@ -92,7 +92,7 @@ bash windows/build.sh [target-dir]
 ### Worktree submodule hook (`cctokmon-worktree-init.sh`)
 
 - A separate script, never part of `cctokmon-hook.sh`, which must stay a fast append: a submodule clone can take minutes, hence the 600 second timeout.
-- It acts only when the payload's `cwd` contains `/.claude/worktrees/`, `.gitmodules` exists there, and `git submodule status` lists an uninitialised (`-`) entry; then it runs `git submodule update --init --recursive` with `GIT_TERMINAL_PROMPT=0`. Windows-style `cwd` backslashes are turned into slashes first.
+- It acts only when the payload's `cwd` contains `/.claude/worktrees/`, `.gitmodules` exists there, and `git submodule status` lists an uninitialised (`-`) entry; then it runs `git submodule update --init --recursive` with stdin from `/dev/null`, `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never` and `GIT_SSH_COMMAND` set to the configured ssh command (`GIT_SSH_COMMAND`, else `core.sshCommand`, else `ssh`) plus `-o BatchMode=yes`, so nothing can wait for an answer. Windows-style `cwd` backslashes are turned into slashes first.
 - Like the status hook it must never write to stdout (`SessionStart` stdout is added to Claude's context): `exec >&2` at the top. It always exits 0.
 
 ### Session status hook (`cctokmon-hook.sh`)
