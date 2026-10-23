@@ -33,6 +33,7 @@ internal sealed class TrayController : IDisposable
     private DateTimeOffset _lastDiscovery = DateTimeOffset.MinValue;
     private BridgeSnapshot? _latest;
     private IReadOnlyDictionary<string, SeenStatus>? _alertBaseline;
+    private string? _balloonSessionId;
     private bool _refreshing;
 
     public TrayController()
@@ -55,7 +56,7 @@ internal sealed class TrayController : IDisposable
         {
             if (e.Button == Forms.MouseButtons.Left) _flyout.Toggle();
         };
-        _notifyIcon.BalloonTipClicked += (_, _) => _flyout.Toggle();
+        _notifyIcon.BalloonTipClicked += (_, _) => OnBalloonClicked();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         Render(null, DateTimeOffset.Now);
         _notifyIcon.Visible = true;
@@ -125,11 +126,25 @@ internal sealed class TrayController : IDisposable
     {
         // Without data or settings there is nothing to compare, so keep the last baseline.
         if (snapshot.Current is null || snapshot.Settings is null) return;
-        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_alertBaseline, snapshot.Sessions, snapshot.Settings.LongTurn);
+        // Looking at the session's window is already being told.
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_alertBaseline, snapshot.Sessions, snapshot.Settings.LongTurn)
+            .Where(alert => !SessionControl.IsForeground(alert.SessionId))
+            .ToList();
         _alertBaseline = StatusAlerts.Advance(_alertBaseline, snapshot.Sessions, DateTimeOffset.Now);
         if (alerts.Count == 0) return;
         AlertBalloon balloon = StatusAlerts.Balloon(alerts);
+        // A balloon listing several sessions leads to the first.
+        _balloonSessionId = alerts[0].SessionId;
         _notifyIcon.ShowBalloonTip((int)BalloonDuration.TotalMilliseconds, balloon.Title, balloon.Text, Forms.ToolTipIcon.Info);
+    }
+
+    private void OnBalloonClicked()
+    {
+        SessionSnapshot? session = _latest?.Sessions.FirstOrDefault(candidate => candidate.Id == _balloonSessionId);
+        if (session is null)
+            _flyout.Toggle();
+        else
+            SessionControl.Activate(session.Id, session.Status, session.Distro, session.State.Workspace?.CurrentDir);
     }
 
     private void Render(BridgeSnapshot? snapshot, DateTimeOffset now)

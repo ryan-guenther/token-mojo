@@ -157,7 +157,15 @@
                     <ItemsControl ItemsSource="{Binding Sessions.Rows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border CornerRadius="8" Padding="8,6">
+                                <Border CornerRadius="8" Padding="8,6" Cursor="Hand" MouseLeftButtonUp="OnRowClick">
+                                    <Border.ContextMenu>
+                                        <ContextMenu Opened="OnRowMenuOpened">
+                                            <MenuItem Header="Focus" Tag="focus" Click="OnRowFocus" />
+                                            <MenuItem Header="Resume in new terminal" Tag="resume" Click="OnRowResume" />
+                                            <MenuItem Header="Open folder" Tag="folder" Click="OnRowOpenFolder" />
+                                            <MenuItem Header="Copy session ID" Click="OnRowCopyId" />
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
                                     <Border.Style>
                                         <Style TargetType="Border">
                                             <Setter Property="Background" Value="Transparent" />
