@@ -22,7 +22,7 @@ STATUSLINE_COMMAND="\"$STATUSLINE_DEST\""
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
-HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","PostToolUseFailure","Notification","Stop","SessionEnd"]'
+HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","PostToolUseFailure","Notification","SubagentStart","SubagentStop","Stop","SessionEnd"]'
 # Initialises submodules in new worktrees; apart from the hook above, which must stay a fast append
 WORKTREE_INIT_DEST="$CLAUDE_DIR/cctokmon-worktree-init.sh"
 WORKTREE_INIT_COMMAND="\"$WORKTREE_INIT_DEST\""
@@ -372,7 +372,10 @@ fi
 
 printf '\n%sRegister Claude Code session status hooks?%s\n' "${BOLD}" "${R}"
 printf 'This lets TokenMojo show which sessions are working, ready or need input.\n'
-printf 'It adds an entry for each of 8 events to "hooks" in ~/.claude/settings.json\n'
+hook_event_count=$(jq length <<<"$HOOK_EVENTS")
+# jq.exe ends its lines with CRLF
+hook_event_count=${hook_event_count%$'\r'}
+printf 'It adds an entry for each of %s events to "hooks" in ~/.claude/settings.json\n' "$hook_event_count"
 printf 'and leaves your existing hooks alone. It also adds a SessionStart hook that\n'
 printf 'initialises submodules in worktrees started with tm --wt.\n\n'
 
@@ -390,7 +393,7 @@ if [[ -f "$SETTINGS_FILE" ]]; then
     hooks_registered=${hooks_registered%$'\r'}
     worktree_init_registered=${worktree_init_registered%$'\r'}
 fi
-if [[ "$hooks_registered" -eq 8 && "$worktree_init_registered" == "true" ]]; then
+if [[ "$hooks_registered" -eq "$hook_event_count" && "$worktree_init_registered" == "true" ]]; then
     ok "Hooks already registered in ${SETTINGS_FILE}"
 else
     printf '  Register now? [Y/n] '

@@ -7,7 +7,7 @@
 # state, so overlapping hooks cannot lose each other's events.
 #
 # Registered for SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure,
-# Notification, Stop and SessionEnd. (Run: install.sh  to register it automatically)
+# Notification, SubagentStart, SubagentStop, Stop and SessionEnd. (Run: install.sh  to register it automatically)
 #
 # SessionStart and UserPromptSubmit add stdout to Claude's context, so this never prints.
 # It always exits 0, so a hook failure can never interrupt a session.
@@ -31,7 +31,7 @@ input=$(cat)
 # append writes atomically.
 mapfile -t parsed < <(printf '%s' "$input" | jq -r --arg now "$(date +%s)" '
     (.hook_event_name // "") as $event
-    | select(["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "Stop", "SessionEnd"]
+    | select(["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "SubagentStart", "SubagentStop", "Stop", "SessionEnd"]
         | index($event))
     | def field($key; $name): if (.[$key] // "") != "" then {($name): (.[$key] | tostring | .[0:100])} else {} end;
     (.session_id // "" | tostring),

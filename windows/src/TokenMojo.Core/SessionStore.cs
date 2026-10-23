@@ -5,7 +5,7 @@ namespace TokenMojo.Core;
 public sealed record SessionSnapshot(
     string Id, BridgeState State, DateTimeOffset Updated,
     SessionStatus Status = SessionStatus.None, DateTimeOffset? StatusSince = null, DateTimeOffset? TurnStarted = null,
-    string? Distro = null, string? User = null, string? Home = null)
+    string? Distro = null, string? User = null, string? Home = null, int Subagents = 0)
 {
     /// <summary>The folder to resume or open: where Claude was started, else where it is now.</summary>
     public string? ResumeFolder =>
@@ -43,7 +43,7 @@ public static class SessionStore
         Dictionary<string, Candidate> newestById = new();
         foreach (ClaudeSource source in sources)
         {
-            foreach (Candidate candidate in LoadSource(source, cutoff))
+            foreach (Candidate candidate in LoadSource(source, cutoff, now))
             {
                 // The same session can be on two sources (say a Windows and a WSL copy): keep the newest, so
                 // rows, counts and alerts all see one.
@@ -54,7 +54,7 @@ public static class SessionStore
         return newestById.Values.Select(c => c.Session).OrderByDescending(s => s.Updated).ToList();
     }
 
-    private static List<Candidate> LoadSource(ClaudeSource source, DateTimeOffset cutoff)
+    private static List<Candidate> LoadSource(ClaudeSource source, DateTimeOffset cutoff, DateTimeOffset now)
     {
         List<Candidate> sessions = new();
         DirectoryInfo dir = new(source.SessionsDir);
@@ -68,11 +68,12 @@ public static class SessionStore
                 if (updated <= cutoff) continue;
                 if (TryRead(file) is not { } state) continue;
                 // An events file that is there but unreadable is skipped until the next refresh, like the bridge file.
-                if (!TryReadEvents(file, out SessionEventState? events, out DateTime eventsWritten)) continue;
+                if (!TryReadEvents(file, now, out SessionEventState? events, out DateTime eventsWritten)) continue;
                 sessions.Add(new Candidate(
                     new SessionSnapshot(
                         Path.GetFileNameWithoutExtension(file.Name), state, updated,
-                        events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted, source.Distro, source.User, source.Home),
+                        events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted, source.Distro, source.User, source.Home,
+                        events?.Subagents ?? 0),
                     eventsWritten));
             }
         }
@@ -100,7 +101,7 @@ public static class SessionStore
 
     // The hook script appends to <id>.events beside <id>.json. No file means a session without hooks (null events);
     // false means the file is there but could not be read. Lines that are not events never fail the read.
-    private static bool TryReadEvents(FileInfo sessionFile, out SessionEventState? events, out DateTime written)
+    private static bool TryReadEvents(FileInfo sessionFile, DateTimeOffset now, out SessionEventState? events, out DateTime written)
     {
         events = null;
         written = DateTime.MinValue;
@@ -114,7 +115,7 @@ public static class SessionStore
             using StreamReader reader = new(stream);
             IEnumerable<string> lines = reader.ReadToEnd().Split('\n');
             // Starting mid-file lands inside a line, which is only part of an event.
-            events = SessionEvents.Reduce(start > 0 ? lines.Skip(1) : lines);
+            events = SessionEvents.Reduce(start > 0 ? lines.Skip(1) : lines, now);
             return true;
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)

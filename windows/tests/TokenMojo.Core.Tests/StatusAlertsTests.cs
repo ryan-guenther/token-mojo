@@ -169,7 +169,7 @@ public class StatusAlertsTests
     {
         // Arrange
         Baseline afterFirst = BaselineOf(Session("a", SessionStatus.Working));
-        Baseline afterGap = StatusAlerts.Advance(afterFirst, [], Now.AddSeconds(5));
+        Baseline afterGap = StatusAlerts.Advance(afterFirst, [], Now.AddSeconds(5), LongTurn);
         SessionSnapshot[] current = [Session("a", SessionStatus.Ready, sinceSeconds: 100, turnSeconds: 120)];
 
         // Act
@@ -184,7 +184,7 @@ public class StatusAlertsTests
     {
         // Arrange
         SessionSnapshot[] both = [Session("a", SessionStatus.NeedsInput)];
-        Baseline afterGap = StatusAlerts.Advance(BaselineOf(both), [], Now.AddSeconds(5));
+        Baseline afterGap = StatusAlerts.Advance(BaselineOf(both), [], Now.AddSeconds(5), LongTurn);
 
         // Act / Assert
         Assert.Empty(StatusAlerts.Diff(afterGap, both, LongTurn));
@@ -210,10 +210,10 @@ public class StatusAlertsTests
     {
         // Arrange
         Baseline baseline = BaselineOf(Session("old", SessionStatus.Working), Session("kept", SessionStatus.Working));
-        baseline = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(11));
+        baseline = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(11), LongTurn);
 
         // Act
-        Baseline later = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(13));
+        Baseline later = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(13), LongTurn);
 
         // Assert
         Assert.Equal(["kept"], later.Keys);
@@ -282,7 +282,7 @@ public class StatusAlertsTests
     {
         // Arrange
         SessionSnapshot[] waiting = [Session("a", SessionStatus.NeedsInput)];
-        Baseline baseline = StatusAlerts.Advance(BaselineOf(waiting), [Session("a", SessionStatus.None)], Now.AddSeconds(5));
+        Baseline baseline = StatusAlerts.Advance(BaselineOf(waiting), [Session("a", SessionStatus.None)], Now.AddSeconds(5), LongTurn);
 
         // Act
         IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(baseline, waiting, LongTurn);
@@ -295,7 +295,7 @@ public class StatusAlertsTests
     public void Advance_SessionFirstSeenWithNoStatus_IsRecordedAsNone()
     {
         // Act
-        Baseline baseline = StatusAlerts.Advance(null, [Session("a", SessionStatus.None)], Now);
+        Baseline baseline = StatusAlerts.Advance(null, [Session("a", SessionStatus.None)], Now, LongTurn);
 
         // Assert
         Assert.Equal(SessionStatus.None, baseline["a"].Status);
@@ -339,7 +339,128 @@ public class StatusAlertsTests
         Assert.InRange(single.Title.Length, 1, 62);
     }
 
-    private static Baseline BaselineOf(params SessionSnapshot[] sessions) => StatusAlerts.Advance(null, sessions, Now);
+    [Fact]
+    public void Diff_SubagentFinishesAfterTheMainStopOnALongTurn_RaisesFinishedOnceOnTheShownTransition()
+    {
+        // Arrange: the main agent stopped at 1100, the subagent kept working until 1150
+        string[] lines =
+        [
+            """{"t":1000,"e":"UserPromptSubmit"}""", """{"t":1010,"e":"SubagentStart","a":"sub-1"}""", """{"t":1100,"e":"Stop"}""",
+            """{"t":1150,"e":"SubagentStop","a":"sub-1"}""",
+        ];
+        SessionSnapshot working = Snapshot(SessionEvents.Reduce(lines[..3], At(1120)));
+        SessionSnapshot stillWorking = Snapshot(SessionEvents.Reduce(lines[..3], At(1140)));
+        SessionSnapshot finished = Snapshot(SessionEvents.Reduce(lines, At(1160)));
+        SessionSnapshot laterRefresh = Snapshot(SessionEvents.Reduce(lines, At(1500)));
+
+        // Act
+        IReadOnlyList<StatusAlert> atTheMainStop = StatusAlerts.Diff(BaselineOf(Snapshot(SessionEvents.Reduce(lines[..2], At(1050)))), [working], LongTurn);
+        IReadOnlyList<StatusAlert> whileSubagentRuns = StatusAlerts.Diff(BaselineOf(working), [stillWorking], LongTurn);
+        IReadOnlyList<StatusAlert> atTheEnd = StatusAlerts.Diff(BaselineOf(stillWorking), [finished], LongTurn);
+        IReadOnlyList<StatusAlert> afterwards = StatusAlerts.Diff(BaselineOf(finished), [laterRefresh], LongTurn);
+
+        // Assert
+        Assert.Empty(atTheMainStop);
+        Assert.Empty(whileSubagentRuns);
+        Assert.Equal([new StatusAlert("a", StatusAlertKind.TurnFinished, "my-session", "Finished")], atTheEnd);
+        Assert.Empty(afterwards);
+    }
+
+    [Fact]
+    public void Diff_LostSubagentStop_RaisesFinishedWhenTheSubagentExpires()
+    {
+        // Arrange
+        string[] lines = ["""{"t":1000,"e":"UserPromptSubmit"}""", """{"t":1010,"e":"SubagentStart","a":"sub-1"}""", """{"t":1100,"e":"Stop"}"""];
+        SessionSnapshot working = Snapshot(SessionEvents.Reduce(lines, At(1500)));
+        SessionSnapshot expired = Snapshot(SessionEvents.Reduce(lines, At(1700)));
+
+        // Act
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(BaselineOf(working), [expired], LongTurn);
+
+        // Assert
+        Assert.Equal([new StatusAlert("a", StatusAlertKind.TurnFinished, "my-session", "Finished")], alerts);
+    }
+
+    [Fact]
+    public void Diff_SubagentExpiresReappearsAndStops_RaisesFinishedOnlyOnceForTheTurn()
+    {
+        // Arrange: the subagent goes quiet and expires at 1610, sends an event at 2000 and stops at 2100
+        string[] lines =
+        [
+            """{"t":1000,"e":"UserPromptSubmit"}""", """{"t":1010,"e":"SubagentStart","a":"sub-1"}""", """{"t":1100,"e":"Stop"}""",
+            """{"t":2000,"e":"PreToolUse","a":"sub-1"}""", """{"t":2100,"e":"SubagentStop","a":"sub-1"}""",
+        ];
+        SessionSnapshot working = Snapshot(SessionEvents.Reduce(lines[..3], At(1500)));
+        SessionSnapshot expired = Snapshot(SessionEvents.Reduce(lines[..3], At(1700)));
+        SessionSnapshot reappeared = Snapshot(SessionEvents.Reduce(lines[..4], At(2050)));
+        SessionSnapshot stopped = Snapshot(SessionEvents.Reduce(lines, At(2150)));
+
+        // Act
+        Baseline seenWorking = BaselineOf(working);
+        IReadOnlyList<StatusAlert> atExpiry = StatusAlerts.Diff(seenWorking, [expired], LongTurn);
+        Baseline seenExpired = StatusAlerts.Advance(seenWorking, [expired], Now, LongTurn);
+        Baseline seenReappeared = StatusAlerts.Advance(seenExpired, [reappeared], Now, LongTurn);
+        IReadOnlyList<StatusAlert> atStop = StatusAlerts.Diff(seenReappeared, [stopped], LongTurn);
+
+        // Assert
+        Assert.Single(atExpiry);
+        Assert.Empty(atStop);
+    }
+
+    [Fact]
+    public void Diff_ReadyAgainWithANewSinceInsideOneRefresh_DoesNotAnnounceTheSameTurnTwice()
+    {
+        // Arrange
+        Baseline announced = StatusAlerts.Advance(
+            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 100)], Now, LongTurn);
+        SessionSnapshot[] readyAgain = [Session("a", SessionStatus.Ready, sinceSeconds: 50, turnSeconds: 150)];
+
+        // Act
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(announced, readyAgain, LongTurn);
+
+        // Assert
+        Assert.Empty(alerts);
+    }
+
+    [Fact]
+    public void Diff_ANewTurnAfterAnAnnouncedOne_CanAnnounceAgain()
+    {
+        // Arrange
+        Baseline announced = StatusAlerts.Advance(
+            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 100)], Now, LongTurn);
+        SessionSnapshot[] nextTurn = [Session("a", SessionStatus.Ready, sinceSeconds: 500, turnSeconds: 60)];
+
+        // Act
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(announced, nextTurn, LongTurn);
+
+        // Assert
+        Assert.Single(alerts);
+    }
+
+    [Fact]
+    public void Diff_ShortTurnThatLaterGrowsLong_StillAnnouncesOnce()
+    {
+        // Arrange: Ready after 10 s is no alert, so it must not use up the turn's one announcement
+        Baseline shortTurn = StatusAlerts.Advance(
+            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 10)], Now, LongTurn);
+        SessionSnapshot[] afterSubagent = [Session("a", SessionStatus.Ready, sinceSeconds: 100, turnSeconds: 110)];
+
+        // Act
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(shortTurn, afterSubagent, LongTurn);
+
+        // Assert
+        Assert.Single(alerts);
+    }
+
+    private static SessionSnapshot Snapshot(SessionEventState events)
+    {
+        BridgeState state = BridgeState.Parse(Payloads.Full) with { SessionId = "a" };
+        return new SessionSnapshot("a", state, Now, events.Status, events.Since, events.TurnStarted, Subagents: events.Subagents);
+    }
+
+    private static DateTimeOffset At(long seconds) => DateTimeOffset.FromUnixTimeSeconds(seconds);
+
+    private static Baseline BaselineOf(params SessionSnapshot[] sessions) => StatusAlerts.Advance(null, sessions, Now, LongTurn);
 
     private static SessionSnapshot Session(
         string id, SessionStatus status, int sinceSeconds = 0, int? turnSeconds = null)

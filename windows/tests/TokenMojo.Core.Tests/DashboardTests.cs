@@ -325,6 +325,34 @@ public sealed class DashboardTests : IDisposable
     }
 
     [Theory]
+    [InlineData(1, "Working: 1 subagent")]
+    [InlineData(2, "Working: 2 subagents")]
+    public void Build_WorkingSessionWithSubagents_SaysHowManyInTheRow(int subagents, string expected)
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = SessionStatus.Working, Subagents = subagents };
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.Equal(expected, row.StatusText);
+    }
+
+    [Fact]
+    public void Build_NeedsInputSessionWithSubagents_KeepsThePlainWording()
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = SessionStatus.NeedsInput, Subagents = 2 };
+
+        // Act
+        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+
+        // Assert
+        Assert.Equal("Needs input", row.StatusText);
+    }
+
+    [Theory]
     [InlineData(9, "Active in the last 10 minutes")]
     [InlineData(11, "Idle")]
     public void Build_SessionWithoutHooks_KeepsTheTenMinuteActivityWording(int minutesAgo, string expected)

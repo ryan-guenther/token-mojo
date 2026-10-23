@@ -19,7 +19,7 @@ STATUSLINE_COMMAND="\"$STATUSLINE_DEST\""
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
-HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","PostToolUseFailure","Notification","Stop","SessionEnd"]'
+HOOK_EVENTS='["SessionStart","UserPromptSubmit","PreToolUse","PostToolUse","PostToolUseFailure","Notification","SubagentStart","SubagentStop","Stop","SessionEnd"]'
 WORKTREE_INIT_DEST="$CLAUDE_DIR/cctokmon-worktree-init.sh"
 WORKTREE_INIT_COMMAND="\"$WORKTREE_INIT_DEST\""
 STATE_FILE="$CLAUDE_DIR/cctokmon-state.json"

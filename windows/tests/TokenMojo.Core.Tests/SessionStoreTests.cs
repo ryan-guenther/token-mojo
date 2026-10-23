@@ -138,6 +138,29 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadSessions_SubagentStillRunningAfterTheMainStop_IsWorkingWithItsCountUntilItExpires()
+    {
+        // Arrange
+        ClaudeSource source = _temp.Source("win");
+        long start = Now.AddMinutes(-20).ToUnixTimeSeconds();
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        _temp.Write("win/cctokmon-sessions/a.events", string.Join("\n",
+            $$"""{"t":{{start}},"e":"UserPromptSubmit"}""",
+            $$"""{"t":{{start + 600}},"e":"SubagentStart","a":"sub-1"}""",
+            $$"""{"t":{{start + 660}},"e":"Stop"}""") + "\n", Now);
+
+        // Act
+        SessionSnapshot running = SessionStore.LoadSessions([source], Now.AddMinutes(-5)).Single();
+        SessionSnapshot expired = SessionStore.LoadSessions([source], Now).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.Working, running.Status);
+        Assert.Equal(1, running.Subagents);
+        Assert.Equal(SessionStatus.Ready, expired.Status);
+        Assert.Equal(0, expired.Subagents);
+    }
+
+    [Fact]
     public void LoadSessions_NoEventsFile_HasNoStatus()
     {
         // Arrange
