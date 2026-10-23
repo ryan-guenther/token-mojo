@@ -2,6 +2,13 @@
 # cctokmon installer
 # Installs cctokmon and optionally configures the Claude Code statusline bridge.
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'cctokmon installer: bash 4.0+ required, found %s.\n' "${BASH_VERSION:-unknown}" >&2
+    printf 'macOS ships bash 3.2. Install a current one (brew install bash) and run this script with it.\n' >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,6 +17,8 @@ CLAUDE_DIR="$HOME/.claude"
 CONFIG_DIR="$HOME/.config/cctokmon"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
+# The path is quoted inside the command string so a home folder with spaces works; the bare form is still recognised as ours.
+STATUSLINE_COMMAND="\"$STATUSLINE_DEST\""
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
@@ -46,6 +55,67 @@ is_our_tm() {
     else
         grep -qx '# tm launcher' "$path" 2>/dev/null
     fi
+}
+
+# Path of the real file behind PATH, following symlinks without GNU readlink -f (stock macOS lacks it)
+resolve_symlinks() {
+    local path="$1" link hops=0
+    while [[ -L "$path" ]]; do
+        (( ++hops <= 40 )) || { err "Too many symbolic links resolving $1"; return 1; }
+        link=$(readlink "$path")
+        case "$link" in
+            /*) path="$link" ;;
+            *) path="$(dirname "$path")/$link" ;;
+        esac
+    done
+    printf '%s' "$path"
+}
+
+# Permission bits of a file, as chmod takes them (stat differs between macOS and Linux)
+file_mode() {
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        stat -f %Lp "$1"
+    else
+        stat -c %a "$1"
+    fi
+}
+
+# Rewrites settings.json with jq, passing it the given arguments. The result is built in a temp file next to
+# the real file (so the final mv is a same-filesystem rename). The original's mode is applied to it after jq
+# has written it, so a read-only settings.json works. A symlinked settings.json is written through, so the
+# symlink stays. On any failure the original is untouched and the temp file is removed.
+SETTINGS_TMP=""
+trap '[[ -z "$SETTINGS_TMP" ]] || rm -f "$SETTINGS_TMP"' EXIT
+write_settings() {
+    local target dir mode
+    target=$(resolve_symlinks "$SETTINGS_FILE") || return 1
+    # Name the real, normalised location in any message
+    dir=$(cd "$(dirname "$target")" && pwd -P) || return 1
+    target="$dir/$(basename "$target")"
+    if [[ ! -w "$dir" ]]; then
+        err "Cannot update ${target}: its directory ${dir} is not writable. Fix the permissions there."
+        return 1
+    fi
+    mode=$(file_mode "$target") || return 1
+    SETTINGS_TMP=$(mktemp "$dir/.settings.json.XXXXXX") || return 1
+    if jq "$@" "$target" > "$SETTINGS_TMP" && chmod "$mode" "$SETTINGS_TMP" && mv "$SETTINGS_TMP" "$target"; then
+        SETTINGS_TMP=""
+        return 0
+    fi
+    rm -f "$SETTINGS_TMP"
+    SETTINGS_TMP=""
+    return 1
+}
+
+# Reads a prompt's answer into ans. End of input (no terminal, stdin closed) leaves ans empty, so the
+# prompt's own default applies instead of `read` failing under set -e. A partial last line is kept.
+read_answer() {
+    ans=""
+    if ! read -r ans && [[ -z "$ans" ]]; then
+        printf '\n'
+    fi
+    # Input piped from Windows tools ends its lines with CRLF
+    ans=${ans%$'\r'}
 }
 
 # ── Detect OS and package manager ──────────────────────────────────────────────
@@ -89,14 +159,6 @@ pkg_name() {
 printf '\n%scctokmon installer%s\n' "${BOLD}${CYAN}" "${R}"
 printf '%s\n\n' "──────────────────"
 
-# Bash 4+ — can't auto-install, must exit immediately
-if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-    err "Bash 4.0+ required. You have ${BASH_VERSION}."
-    if [[ "$OS" == "Darwin" ]]; then
-        info "Install: brew install bash"
-    fi
-    exit 1
-fi
 ok "Bash ${BASH_VERSION}"
 
 # Check remaining deps, collecting any that are missing
@@ -138,7 +200,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     case "$PKG_MGR" in
         brew)
             printf '  Install with Homebrew (%s)? [Y/n] ' "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: brew install ${PKG_LIST[*]}"; exit 1
             fi
@@ -146,7 +208,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
             ;;
         apt)
             printf '  Install with apt (%s)? [Y/n] ' "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: sudo apt install ${PKG_LIST[*]}"; exit 1
             fi
@@ -154,7 +216,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
             ;;
         dnf|yum)
             printf '  Install with %s (%s)? [Y/n] ' "$PKG_MGR" "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: sudo $PKG_MGR install ${PKG_LIST[*]}"; exit 1
             fi
@@ -162,7 +224,7 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
             ;;
         winget)
             printf '  Install with winget (%s)? [Y/n] ' "${PKG_LIST[*]}"
-            read -r ans
+            read_answer
             if [[ "${ans,,}" == "n" ]]; then
                 info "Run manually: winget install --exact --id ${PKG_LIST[*]}"; exit 1
             fi
@@ -197,8 +259,8 @@ else
     ok "Config exists:  ${CONFIG_DIR}/config  (not overwritten)"
 fi
 
-# Bin dir
-mkdir -p "$BIN_DIR"
+# Bin dir, and the Claude dir that the scripts below are copied into (absent until Claude Code first runs)
+mkdir -p "$BIN_DIR" "$CLAUDE_DIR"
 
 # Symlink main script
 chmod +x "${SCRIPT_DIR}/cctokmon.sh"
@@ -257,29 +319,39 @@ printf '\n%sConfigure Claude Code statusline bridge?%s\n' "${BOLD}" "${R}"
 printf 'This lets cctokmon receive real-time data from Claude Code.\n'
 printf 'It sets "statusLine" in ~/.claude/settings.json.\n\n'
 
-# Check if already configured
+# Check if already configured: ours (quoted, or bare as earlier installs wrote it) or someone else's
 if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     existing_sl=$(jq -r '.statusLine // empty' "$SETTINGS_FILE" 2>/dev/null || true)
-    if [[ -n "$existing_sl" ]]; then
+    existing_cmd=$(jq -r '(.statusLine | if type == "object" then .command else . end) // empty' "$SETTINGS_FILE" 2>/dev/null || true)
+    # A native jq.exe under Git Bash ends its lines with CRLF
+    existing_sl=${existing_sl%$'\r'}
+    existing_cmd=${existing_cmd%$'\r'}
+    if [[ "$existing_cmd" == "$STATUSLINE_COMMAND" ]]; then
+        ok "statusLine already configured in ${SETTINGS_FILE}"
+        configure_sl=0
+    elif [[ "$existing_cmd" == "$STATUSLINE_DEST" ]]; then
+        info "Updating the statusLine to the quoted form, so a path with spaces works."
+        configure_sl=1
+    elif [[ -n "$existing_sl" ]]; then
         warn "A statusLine is already configured: ${existing_sl}"
         printf '  Overwrite with cctokmon? [y/N] '
-        read -r ans
+        read_answer
         if [[ "${ans,,}" != "y" ]]; then
             info "Skipped. To configure manually:"
-            info "  Set \"statusLine\": \"${STATUSLINE_DEST}\" in ~/.claude/settings.json"
+            info "  Set \"statusLine\": {\"type\": \"command\", \"command\": \"\\\"${STATUSLINE_DEST}\\\"\"} in ~/.claude/settings.json"
             configure_sl=0
         else
             configure_sl=1
         fi
     else
         printf '  Configure now? [Y/n] '
-        read -r ans
+        read_answer
         configure_sl=1
         [[ "${ans,,}" == "n" ]] && configure_sl=0
     fi
 else
     printf '  Configure now? [Y/n] '
-    read -r ans
+    read_answer
     configure_sl=1
     [[ "${ans,,}" == "n" ]] && configure_sl=0
 fi
@@ -290,10 +362,9 @@ if [[ "${configure_sl:-0}" -eq 1 ]]; then
         printf '{}' > "$SETTINGS_FILE"
     fi
 
-    # Update with jq
-    local_tmp=$(mktemp)
-    jq --arg sl "$STATUSLINE_DEST" '.statusLine = {"type": "command", "command": $sl}' "$SETTINGS_FILE" > "$local_tmp"
-    mv "$local_tmp" "$SETTINGS_FILE"
+    # shellcheck disable=SC2016 # the single-quoted argument is a jq program
+    write_settings --arg sl "$STATUSLINE_COMMAND" '.statusLine = {"type": "command", "command": $sl}' ||
+        { err "Cannot update ${SETTINGS_FILE}; it was left unchanged."; exit 1; }
     ok "statusLine set in ${SETTINGS_FILE}"
 fi
 
@@ -323,7 +394,7 @@ if [[ "$hooks_registered" -eq 8 && "$worktree_init_registered" == "true" ]]; the
     ok "Hooks already registered in ${SETTINGS_FILE}"
 else
     printf '  Register now? [Y/n] '
-    read -r ans
+    read_answer
     configure_hooks=1
     [[ "${ans,,}" == "n" ]] && configure_hooks=0
 fi
@@ -333,8 +404,8 @@ if [[ "$configure_hooks" -eq 1 ]]; then
         printf '{}' > "$SETTINGS_FILE"
     fi
 
-    local_tmp=$(mktemp)
-    jq --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" \
+    # shellcheck disable=SC2016 # the single-quoted argument is a jq program
+    write_settings --arg cmd "$HOOK_COMMAND" --argjson events "$HOOK_EVENTS" \
         --arg init "$WORKTREE_INIT_COMMAND" --argjson init_timeout "$WORKTREE_INIT_TIMEOUT" '
         reduce $events[] as $e (.;
             if ([.hooks[$e][]?.hooks[]?.command] | index($cmd)) then .
@@ -344,8 +415,7 @@ if [[ "$configure_hooks" -eq 1 ]]; then
           else .hooks.SessionStart = ((.hooks.SessionStart // [])
               + [{"matcher": "startup", "hooks": [{"type": "command", "command": $init, "timeout": $init_timeout}]}])
           end
-    ' "$SETTINGS_FILE" > "$local_tmp"
-    mv "$local_tmp" "$SETTINGS_FILE"
+    ' || { err "Cannot update ${SETTINGS_FILE}; it was left unchanged."; exit 1; }
     ok "Hooks registered in ${SETTINGS_FILE}"
 fi
 

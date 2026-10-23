@@ -2,6 +2,13 @@
 # cctokmon v0.1.0 — Claude Code Token Monitor
 # Live token usage, cost, and context window data for Claude Code sessions.
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'cctokmon: bash 4.0+ required, found %s.\n' "${BASH_VERSION:-unknown}" >&2
+    printf 'macOS ships bash 3.2. Install a current one (brew install bash) and run this script with it.\n' >&2
+    exit 1
+fi
+
 set -uo pipefail
 
 readonly VERSION="0.1.0"
@@ -335,6 +342,8 @@ read_bridge_state() {
 
     local -a a
     mapfile -t a <<< "$values"
+    # A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR
+    a=("${a[@]%$'\r'}")
     [[ ${#a[@]} -lt 19 ]] && return 1
 
     MODEL_NAME="${a[0]}"
@@ -380,6 +389,7 @@ read_polling_state() {
 
     local -a da
     mapfile -t da <<< "$daily_vals"
+    da=("${da[@]%$'\r'}")
     DAILY_MESSAGES="${da[0]:-0}"
     DAILY_SESSIONS="${da[1]:-0}"
     DAILY_TOOL_CALLS="${da[2]:-0}"
@@ -392,9 +402,11 @@ read_polling_state() {
          (.value.cacheReadInputTokens     // 0),
          (.value.cacheCreationInputTokens // 0)] | @tsv
     ') 2>/dev/null || POLLING_MODEL_USAGE=""
+    POLLING_MODEL_USAGE=${POLLING_MODEL_USAGE//$'\r'/}
 
     CACHE_COMPUTED=$(printf '%s' "$json" | jq -r '.lastComputedDate // "unknown"' 2>/dev/null \
         || echo "unknown")
+    CACHE_COMPUTED=${CACHE_COMPUTED%$'\r'}
 
     LAST_UPDATE=$(date +%s)
     return 0
@@ -646,11 +658,7 @@ cmd_check() {
     printf '%s\n' "────────────────────────────────"
 
     # Bash version
-    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
-        printf '%b Bash %s\n' "$ok" "$BASH_VERSION"
-    else
-        printf '%b Bash %s — need 4.0+\n' "$fail" "$BASH_VERSION"
-    fi
+    printf '%b Bash %s\n' "$ok" "$BASH_VERSION"
 
     # jq
     if command -v jq >/dev/null 2>&1; then
@@ -681,6 +689,7 @@ cmd_check() {
     [[ -f "$settings" ]] && command -v jq >/dev/null 2>&1 && \
         sl_cmd=$(jq -r '(.statusLine | objects | .command) // (.statusLine | strings) // empty' \
             "$settings" 2>/dev/null || true)
+    sl_cmd=${sl_cmd%$'\r'}
     local sl_is_ours=0 sl_note="" w
     if [[ "$sl_cmd" == *cctokmon-statusline.sh* ]]; then
         sl_is_ours=1
@@ -800,11 +809,6 @@ load_config() {
 }
 
 check_deps() {
-    if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-        printf 'cctokmon requires Bash 4.0+. You have %s.\n' "$BASH_VERSION" >&2
-        printf 'macOS users: brew install bash\n' >&2
-        exit 1
-    fi
     if ! command -v jq >/dev/null 2>&1; then
         printf 'cctokmon requires jq.\n  Ubuntu/Debian: apt install jq\n  macOS: brew install jq\n' >&2
         exit 1

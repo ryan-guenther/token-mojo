@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # cctokmon uninstaller
 
+# Bash 4+ is needed below. Checked first, in syntax that bash 3.2 (stock macOS) can still parse.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    printf 'cctokmon uninstaller: bash 4.0+ required, found %s.\n' "${BASH_VERSION:-unknown}" >&2
+    printf 'macOS ships bash 3.2. Install a current one (brew install bash) and run this script with it.\n' >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 BIN_DIR="$HOME/.local/bin"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
+# The installer writes the quoted form; the bare form is still recognised as ours
+STATUSLINE_COMMAND="\"$STATUSLINE_DEST\""
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
 HOOK_COMMAND="\"$HOOK_DEST\""
@@ -25,6 +34,67 @@ fi
 
 ok()   { printf '%s✓%s %s\n' "${GREEN}" "${R}" "$*"; }
 warn() { printf '%s⚠%s  %s\n' "${YELLOW}" "${R}" "$*"; }
+
+# Path of the real file behind PATH, following symlinks without GNU readlink -f (stock macOS lacks it)
+resolve_symlinks() {
+    local path="$1" link hops=0
+    while [[ -L "$path" ]]; do
+        (( ++hops <= 40 )) || { printf 'Too many symbolic links resolving %s\n' "$1" >&2; return 1; }
+        link=$(readlink "$path")
+        case "$link" in
+            /*) path="$link" ;;
+            *) path="$(dirname "$path")/$link" ;;
+        esac
+    done
+    printf '%s' "$path"
+}
+
+# Permission bits of a file, as chmod takes them (stat differs between macOS and Linux)
+file_mode() {
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        stat -f %Lp "$1"
+    else
+        stat -c %a "$1"
+    fi
+}
+
+# Rewrites settings.json with jq, passing it the given arguments. The result is built in a temp file next to
+# the real file (so the final mv is a same-filesystem rename). The original's mode is applied to it after jq
+# has written it, so a read-only settings.json works. A symlinked settings.json is written through, so the
+# symlink stays. On any failure the original is untouched and the temp file is removed.
+SETTINGS_TMP=""
+trap '[[ -z "$SETTINGS_TMP" ]] || rm -f "$SETTINGS_TMP"' EXIT
+write_settings() {
+    local target dir mode
+    target=$(resolve_symlinks "$SETTINGS_FILE") || return 1
+    # Name the real, normalised location in any message
+    dir=$(cd "$(dirname "$target")" && pwd -P) || return 1
+    target="$dir/$(basename "$target")"
+    if [[ ! -w "$dir" ]]; then
+        printf 'Cannot update %s: its directory %s is not writable. Fix the permissions there.\n' "$target" "$dir" >&2
+        return 1
+    fi
+    mode=$(file_mode "$target") || return 1
+    SETTINGS_TMP=$(mktemp "$dir/.settings.json.XXXXXX") || return 1
+    if jq "$@" "$target" > "$SETTINGS_TMP" && chmod "$mode" "$SETTINGS_TMP" && mv "$SETTINGS_TMP" "$target"; then
+        SETTINGS_TMP=""
+        return 0
+    fi
+    rm -f "$SETTINGS_TMP"
+    SETTINGS_TMP=""
+    return 1
+}
+
+# Reads a prompt's answer into ans. End of input (no terminal, stdin closed) leaves ans empty, so the
+# prompt's own default applies instead of `read` failing under set -e. A partial last line is kept.
+read_answer() {
+    ans=""
+    if ! read -r ans && [[ -z "$ans" ]]; then
+        printf '\n'
+    fi
+    # Input piped from Windows tools ends its lines with CRLF
+    ans=${ans%$'\r'}
+}
 
 printf '\n%scctokmon uninstaller%s\n%s\n\n' "${BOLD}" "${R}" "────────────────────"
 
@@ -50,8 +120,8 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     # A native jq.exe under Git Bash ends its lines with CRLF
     has_hooks=${has_hooks%$'\r'}
     if [[ "$has_hooks" == "true" ]]; then
-        local_tmp=$(mktemp)
-        if ! jq --arg cmd "$HOOK_COMMAND" --arg init "$WORKTREE_INIT_COMMAND" --argjson events "$HOOK_EVENTS" '
+        # shellcheck disable=SC2016 # the single-quoted argument is a jq program
+        if ! write_settings --arg cmd "$HOOK_COMMAND" --arg init "$WORKTREE_INIT_COMMAND" --argjson events "$HOOK_EVENTS" '
             def ours_cmd: . == $cmd or . == $init;
             reduce $events[] as $e (.;
                 if .hooks[$e] == null then .
@@ -62,13 +132,12 @@ if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
                 end
                 | if .hooks[$e] == [] then del(.hooks[$e]) else . end)
             | if .hooks == {} then del(.hooks) else . end
-        ' "$SETTINGS_FILE" > "$local_tmp" 2>"$jq_error"; then
+        ' 2>"$jq_error"; then
             printf 'Cannot process %s, so nothing was removed:\n' "$SETTINGS_FILE" >&2
             cat "$jq_error" >&2
-            rm -f "$jq_error" "$local_tmp"
+            rm -f "$jq_error"
             exit 1
         fi
-        mv "$local_tmp" "$SETTINGS_FILE"
         ok "Removed session status hooks from ${SETTINGS_FILE}"
     fi
     rm -f "$jq_error"
@@ -125,10 +194,11 @@ fi
 # Remove statusLine from settings.json
 if [[ -f "$SETTINGS_FILE" ]] && command -v jq >/dev/null 2>&1; then
     sl=$(jq -r '(.statusLine | if type == "object" then .command else . end) // empty' "$SETTINGS_FILE" 2>/dev/null || true)
-    if [[ "$sl" == *"cctokmon"* ]]; then
-        local_tmp=$(mktemp)
-        jq 'del(.statusLine)' "$SETTINGS_FILE" > "$local_tmp"
-        mv "$local_tmp" "$SETTINGS_FILE"
+    # A native jq.exe under Git Bash ends its lines with CRLF
+    sl=${sl%$'\r'}
+    if [[ "$sl" == "$STATUSLINE_COMMAND" || "$sl" == "$STATUSLINE_DEST" ]]; then
+        write_settings 'del(.statusLine)' ||
+            { printf 'Cannot update %s; it was left unchanged.\n' "$SETTINGS_FILE" >&2; exit 1; }
         ok "Removed statusLine from ${SETTINGS_FILE}"
     fi
 fi
@@ -136,7 +206,7 @@ fi
 # Ask about config
 if [[ -d "$HOME/.config/cctokmon" ]]; then
     printf 'Remove config dir ~/.config/cctokmon? [y/N] '
-    read -r ans
+    read_answer
     if [[ "${ans,,}" == "y" ]]; then
         rm -rf "$HOME/.config/cctokmon"
         ok "Removed: ~/.config/cctokmon"
