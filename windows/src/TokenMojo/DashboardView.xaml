@@ -25,6 +25,26 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="0,0,6,0" />
         </Style>
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+            <Setter Property="FontFamily" Value="{DynamicResource IconFont}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Width="22" Height="22" CornerRadius="5" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="Digits" TargetType="TextBlock">
             <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
         </Style>
@@ -147,6 +167,8 @@
             <Border Style="{StaticResource Card}" Visibility="{Binding Sessions, Converter={StaticResource VisibleWhen}}">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,4">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE710;" Margin="6,0,0,0"
+                                ToolTip="New session" AutomationProperties.Name="New session" Click="OnNewSession" />
                         <TextBlock DockPanel.Dock="Right" Text="{Binding Sessions.Summary}" Style="{StaticResource Secondary}"
                                    VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
                         <StackPanel Orientation="Horizontal">

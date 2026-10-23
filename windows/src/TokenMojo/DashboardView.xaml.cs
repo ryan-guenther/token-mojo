@@ -15,6 +15,9 @@ public partial class DashboardView : UserControl
     /// <summary>Raised after a session's window was brought forward or its resume was started.</summary>
     public event EventHandler? SessionActed;
 
+    /// <summary>Raised when the "+" in the Sessions header is clicked.</summary>
+    public event EventHandler? NewSessionRequested;
+
     public void Show(DashboardModel model)
     {
         DataContext = model;
@@ -28,6 +31,8 @@ public partial class DashboardView : UserControl
         MessageText.Visibility = Visibility.Visible;
         Panel.Visibility = Visibility.Collapsed;
     }
+
+    private void OnNewSession(object sender, RoutedEventArgs e) => NewSessionRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnRowPress(object sender, RoutedEventArgs e)
     {

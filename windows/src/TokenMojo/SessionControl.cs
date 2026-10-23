@@ -77,17 +77,14 @@ internal static class SessionControl
         if (target.Distro is not { } distro) return false;
         if (await Task.Run(() => TmMissing(distro, target.User)))
         {
-            Warn(string.Format(TmMissingText, target.User, distro));
+            Warn(TmMissingMessage(distro, target.User));
             return false;
         }
         try
         {
             ResumeCommand command = await Task.Run(
                 () => ResumeCommand.Build(distro, target.User, target.Id, target.Folder, Directory.Exists));
-            ProcessStartInfo startInfo = new(command.FileName) { UseShellExecute = false };
-            foreach (string argument in command.Arguments)
-                startInfo.ArgumentList.Add(argument);
-            Process.Start(startInfo)?.Dispose();
+            TerminalProcess.Start(command);
             return true;
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException or ArgumentException)
@@ -150,8 +147,10 @@ internal static class SessionControl
     }
 
     // Without a known user there is no home folder to look in, so resume is left to fail visibly in the terminal.
-    private static bool TmMissing(string distro, string? user) =>
+    internal static bool TmMissing(string distro, string? user) =>
         WslPaths.TmInstallPath(distro, user) is { } path && !File.Exists(path);
+
+    internal static string TmMissingMessage(string distro, string? user) => string.Format(TmMissingText, user, distro);
 
     private static bool FocusWindow(TerminalWindow window)
     {

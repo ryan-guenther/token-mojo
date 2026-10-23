@@ -30,6 +30,7 @@
         <Border Height="1" Background="{DynamicResource WindowBorderBrush}" />
         <!-- The Mac dropdown's menu items -->
         <StackPanel Margin="6">
+            <Button Style="{StaticResource MenuButton}" Content="New Session…" Click="OnNewSession" />
             <Button Style="{StaticResource MenuButton}" Content="Pop Out Window" Click="OnPopOut" />
             <Button Style="{StaticResource MenuButton}" Click="OnToggleLaunchAtLogin">
                 <DockPanel>
