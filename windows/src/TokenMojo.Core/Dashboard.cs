@@ -136,6 +136,7 @@ public static class Dashboard
     {
         SessionStatus.NeedsInput => "Needs input",
         SessionStatus.Ready => "Ready",
+        SessionStatus.Working when session.Subagents > 0 => $"Working: {session.Subagents} {(session.Subagents == 1 ? "subagent" : "subagents")}",
         SessionStatus.Working => "Working",
         SessionStatus.Ended => "Ended",
         _ => session.IsActive(now) ? "Active in the last 10 minutes" : "Idle",
