@@ -17,7 +17,7 @@ CLAUDE_DIR="$HOME/.claude"
 CONFIG_DIR="$HOME/.config/cctokmon"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 STATUSLINE_DEST="$CLAUDE_DIR/cctokmon-statusline.sh"
-# Quoted inside the command string for the same reason as the hook command below. Earlier installs wrote it bare.
+# The path is quoted inside the command string so a home folder with spaces works; the bare form is still recognised as ours.
 STATUSLINE_COMMAND="\"$STATUSLINE_DEST\""
 HOOK_DEST="$CLAUDE_DIR/cctokmon-hook.sh"
 # Quoted inside the command string, since Claude Code runs it through a shell and HOME may contain spaces
@@ -114,6 +114,8 @@ read_answer() {
     if ! read -r ans && [[ -z "$ans" ]]; then
         printf '\n'
     fi
+    # Input piped from Windows tools ends its lines with CRLF
+    ans=${ans%$'\r'}
 }
 
 # ── Detect OS and package manager ──────────────────────────────────────────────

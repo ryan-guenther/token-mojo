@@ -90,6 +90,8 @@ read_answer() {
     if ! read -r ans && [[ -z "$ans" ]]; then
         printf '\n'
     fi
+    # Input piped from Windows tools ends its lines with CRLF
+    ans=${ans%$'\r'}
 }
 
 printf '\n%scctokmon uninstaller%s\n%s\n\n' "${BOLD}" "${R}" "────────────────────"
