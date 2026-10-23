@@ -131,6 +131,81 @@ public sealed class LaunchTargetsTests
     }
 
     [Fact]
+    public void ChooseUser_NonDefaultCandidateCouldNotBeChecked_IsSkipped()
+    {
+        // Arrange
+        ClaudeSource[] sources = [Source("alice", isDefault: true), Source("bob"), Source("carol")];
+
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser(sources, "Ubuntu", source => source.User switch
+        {
+            "alice" => TmState.Missing,
+            "bob" => TmState.Unchecked,
+            _ => TmState.Ours,
+        });
+
+        // Assert
+        Assert.Equal("carol", choice.Source!.User);
+    }
+
+    [Fact]
+    public void ChooseUser_FirstCandidateOfAListWithoutADefaultCouldNotBeChecked_IsSkipped()
+    {
+        // Arrange
+        ClaudeSource[] sources = [Source("alice"), Source("bob")];
+
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser(sources, "Ubuntu", source => source.User == "alice" ? TmState.Unchecked : TmState.Ours);
+
+        // Assert
+        Assert.Equal(("bob", null), (choice.Source!.User, choice.Problem));
+    }
+
+    [Fact]
+    public void ChooseUser_NobodyQualifiesAndOneCouldNotBeChecked_ReportsNotChecked()
+    {
+        // Arrange
+        ClaudeSource[] sources = [Source("alice", isDefault: true), Source("bob"), Source("carol")];
+
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser(sources, "Ubuntu", source => source.User switch
+        {
+            "alice" => TmState.Foreign,
+            "bob" => TmState.Unchecked,
+            _ => TmState.Missing,
+        });
+
+        // Assert
+        Assert.Null(choice.Source);
+        Assert.StartsWith("Could not check tm for bob in Ubuntu", choice.Problem);
+    }
+
+    [Fact]
+    public void ChooseUser_UnreadableTmIsSkippedLikeAForeignOne()
+    {
+        // Arrange
+        ClaudeSource[] sources = [Source("alice", isDefault: true), Source("bob")];
+
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser(sources, "Ubuntu", source => source.User == "alice" ? TmState.Unreadable : TmState.Ours);
+
+        // Assert
+        Assert.Equal("bob", choice.Source!.User);
+        Assert.NotNull(choice.Note);
+    }
+
+    [Fact]
+    public void ChooseUser_OnlyAnUnreadableTm_ReportsItCouldNotBeRead()
+    {
+        // Act
+        LaunchUser choice = LaunchTargets.ChooseUser([Source("alice")], "Ubuntu", _ => TmState.Unreadable);
+
+        // Assert
+        Assert.Null(choice.Source);
+        Assert.Contains("could not be read", choice.Problem);
+    }
+
+    [Fact]
     public void ChooseUser_DistroNameCaseDiffersFromWsl_StillMatches()
     {
         // Act

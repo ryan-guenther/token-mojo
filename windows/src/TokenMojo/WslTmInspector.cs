@@ -17,8 +17,8 @@ internal sealed class WslTmInspector : ITmInspector
             return TmState.Unchecked;
         }
         TmState state = TmInstall.FromScript(result.ExitCode, result.Output);
-        if (state == TmState.Unchecked)
-            Trace.TraceWarning("TokenMojo: checking tm for {0} in {1} failed with exit code {2}", user, distro, result.ExitCode);
+        if (state == TmState.Unreadable)
+            Trace.TraceWarning("TokenMojo: tm for {0} in {1} could not be read (exit code {2})", user, distro, result.ExitCode);
         return state;
     }
 }

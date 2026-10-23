@@ -119,6 +119,59 @@ public sealed class ClaudeDirLocatorTests : IDisposable
     }
 
     [Fact]
+    public void Locate_QueryFailsAfterOneSucceeded_ReusesTheLastAnswer()
+    {
+        // Arrange
+        string share = _temp.MakeDir("share");
+        _temp.MakeDir("share/Ubuntu/home/alice.smith/.claude");
+        LinuxAccounts answer = new("alice", new Dictionary<string, string> { ["/home/alice.smith"] = "alice" });
+        FlakyAccounts accounts = new(answer);
+        ClaudeDirLocator locator = new(_temp.MakeDir("winhome"), new FakeWsl("Ubuntu"), accounts, NoEnv, share);
+        locator.Locate();
+
+        // Act
+        ClaudeSource source = locator.Locate().Last();
+
+        // Assert
+        Assert.Equal(2, accounts.Calls);
+        Assert.Equal(("alice", true), (source.User, source.IsDefaultUser));
+    }
+
+    [Fact]
+    public void Locate_FirstQueryFailsThenSucceeds_UsesTheAnswerOnceItArrives()
+    {
+        // Arrange
+        string share = _temp.MakeDir("share");
+        _temp.MakeDir("share/Ubuntu/home/alice.smith/.claude");
+        LinuxAccounts answer = new("alice", new Dictionary<string, string> { ["/home/alice.smith"] = "alice" });
+        FlakyAccounts accounts = new(answer, failFirst: true);
+        ClaudeDirLocator locator = new(_temp.MakeDir("winhome"), new FakeWsl("Ubuntu"), accounts, NoEnv, share);
+
+        // Act
+        string beforeAnswer = locator.Locate().Last().User!;
+        string afterAnswer = locator.Locate().Last().User!;
+
+        // Assert
+        Assert.Equal(("alice.smith", "alice"), (beforeAnswer, afterAnswer));
+    }
+
+    [Fact]
+    public void Locate_HomeFolderNamedRootUnderHome_IsNotRootsHome()
+    {
+        // Arrange
+        string share = _temp.MakeDir("share");
+        _temp.MakeDir("share/Ubuntu/home/root/.claude");
+        _temp.MakeDir("share/Ubuntu/root/.claude");
+        ClaudeDirLocator locator = new(_temp.MakeDir("winhome"), new FakeWsl("Ubuntu"), new FakeAccounts(), NoEnv, share);
+
+        // Act
+        List<ClaudeSource> sources = locator.Locate().Skip(1).ToList();
+
+        // Assert
+        Assert.Equal(["/home/root", "/root"], sources.Select(source => source.Home));
+    }
+
+    [Fact]
     public void Locate_DistroCannotBeAsked_FallsBackToTheFolderNameWithoutADefaultUser()
     {
         // Arrange
@@ -181,6 +234,18 @@ public sealed class ClaudeDirLocatorTests : IDisposable
     private sealed class FakeWsl(params string[] running) : IWslDistros
     {
         public IReadOnlyList<string> Running() => running;
+    }
+
+    // Answers once and then fails, or fails once and then answers.
+    private sealed class FlakyAccounts(LinuxAccounts answer, bool failFirst = false) : ILinuxAccounts
+    {
+        public int Calls { get; private set; }
+
+        public LinuxAccounts? Query(string distro)
+        {
+            Calls++;
+            return (Calls == 1) == failFirst ? null : answer;
+        }
     }
 
     private sealed class FakeAccounts : Dictionary<string, LinuxAccounts?>, ILinuxAccounts

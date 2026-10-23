@@ -25,7 +25,9 @@ public sealed record LinuxAccounts(string DefaultUser, IReadOnlyDictionary<strin
             // name:password:uid:gid:gecos:home:shell
             string[] fields = line.Split(':');
             if (fields.Length < 7 || fields[0].Length == 0 || fields[5].Length == 0) continue;
-            userByHome.TryAdd(fields[5].TrimEnd('/'), fields[0]);
+            string home = fields[5].TrimEnd('/');
+            // A home shared by two accounts goes to the default user, else to the first.
+            if (!userByHome.TryAdd(home, fields[0]) && fields[0] == lines[0]) userByHome[home] = fields[0];
         }
         return new LinuxAccounts(lines[0], userByHome);
     }

@@ -53,6 +53,16 @@ public sealed class LinuxAccountsTests
     }
 
     [Fact]
+    public void Parse_TwoAccountsShareAHomeAndOneIsTheDefaultUser_TheDefaultUserWins()
+    {
+        // Act
+        LinuxAccounts? accounts = LinuxAccounts.Parse("b\na:x:1:1::/srv/shared:/bin/sh\nb:x:2:2::/srv/shared:/bin/sh\n");
+
+        // Assert
+        Assert.Equal("b", accounts!.UserByHome["/srv/shared"]);
+    }
+
+    [Fact]
     public void Parse_MalformedPasswdLines_AreSkipped()
     {
         // Act

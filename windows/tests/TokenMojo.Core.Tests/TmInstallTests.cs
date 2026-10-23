@@ -53,10 +53,22 @@ public sealed class TmInstallTests
     [InlineData(1)]
     [InlineData(-1)]
     [InlineData(127)]
-    public void FromScript_CommandItselfFailed_IsUncheckedNotMissing(int exitCode)
+    public void FromScript_AnyOtherExit_IsUnreadableNotMissingOrUnchecked(int exitCode)
     {
         // Act / Assert
-        Assert.Equal(TmState.Unchecked, TmInstall.FromScript(exitCode, ""));
+        Assert.Equal(TmState.Unreadable, TmInstall.FromScript(exitCode, ""));
+    }
+
+    [Fact]
+    public void ProblemText_Unreadable_NamesTheFileAndSaysItCouldNotBeRead()
+    {
+        // Act
+        string? text = TmInstall.ProblemText(TmState.Unreadable, "alice", "Ubuntu", "/home/alice");
+
+        // Assert
+        Assert.Equal(
+            "The tm for alice in Ubuntu (/home/alice/.local/bin/tm) could not be read, so TokenMojo did not run it. Check its permissions.",
+            text);
     }
 
     [Fact]

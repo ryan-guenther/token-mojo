@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace TokenMojo.Core;
@@ -21,6 +22,9 @@ public sealed class ClaudeDirLocator(
     private const string StateFileName = "cctokmon-state.json";
     private const string SessionsDirName = "cctokmon-sessions";
 
+    // Locate runs on the discovery timer and when the launcher opens, so this is shared between threads.
+    private readonly ConcurrentDictionary<string, LinuxAccounts> _lastAnswers = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<ClaudeSource> Locate()
     {
         string windowsClaude = Path.Combine(windowsHome, ".claude");
@@ -39,34 +43,54 @@ public sealed class ClaudeDirLocator(
     private List<ClaudeSource> DistroSources(string distro)
     {
         string distroRoot = Path.Combine(wslShareRoot, distro);
-        List<(string Folder, string OnShare)> homes = new();
+        List<(string Folder, string Home, string OnShare)> homes = new();
         string homeDir = Path.Combine(distroRoot, "home");
         try
         {
             if (Directory.Exists(homeDir))
-                homes.AddRange(Directory.EnumerateDirectories(homeDir).Order().Select(onShare => (Path.GetFileName(onShare), onShare)));
+            {
+                homes.AddRange(Directory.EnumerateDirectories(homeDir).Order()
+                    .Select(onShare => (Path.GetFileName(onShare), $"/home/{Path.GetFileName(onShare)}", onShare)));
+            }
         }
         // The distro may stop between listing and reading, or deny access to /home.
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return [];
         }
-        homes.Add(("root", Path.Combine(distroRoot, "root")));
+        // Only this one is root's home: a folder named root under /home is an ordinary home.
+        homes.Add(("root", "/root", Path.Combine(distroRoot, "root")));
         List<(string Home, string Folder, string Claude)> withClaude = homes
-            .Select(entry => (Home: entry.Folder == "root" ? "/root" : $"/home/{entry.Folder}", entry.Folder, Claude: Path.Combine(entry.OnShare, ".claude")))
+            .Select(entry => (entry.Home, entry.Folder, Claude: Path.Combine(entry.OnShare, ".claude")))
             .Where(entry => Directory.Exists(entry.Claude))
             .ToList();
         if (withClaude.Count == 0) return [];
-        // One question per distro, and only when there is something to name.
-        LinuxAccounts? distroAccounts = accounts.Query(distro);
-        if (distroAccounts is null)
-            Trace.TraceWarning("TokenMojo: cannot read the users of {0}; using home folder names as user names", distro);
+        LinuxAccounts? distroAccounts = AccountsOf(distro);
         return withClaude
             .Select(entry => (entry.Home, entry.Claude, User: UserOf(distro, distroAccounts, entry.Folder, entry.Home)))
             .Select(entry => new ClaudeSource($"{distro}:{entry.User}",
                 Path.Combine(entry.Claude, StateFileName), Path.Combine(entry.Claude, SessionsDirName),
                 distro, entry.User, entry.Home, IsDefaultUser: entry.User == distroAccounts?.DefaultUser))
             .ToList();
+    }
+
+    // One question per distro, and only when there is something to name. A failed question does not undo what an earlier
+    // one found: the last answer is reused, and folder names are the fallback only when there never was one.
+    private LinuxAccounts? AccountsOf(string distro)
+    {
+        LinuxAccounts? answer = accounts.Query(distro);
+        if (answer is not null)
+        {
+            _lastAnswers[distro] = answer;
+            return answer;
+        }
+        if (_lastAnswers.TryGetValue(distro, out LinuxAccounts? earlier))
+        {
+            Trace.TraceWarning("TokenMojo: cannot read the users of {0}; using the answer from earlier", distro);
+            return earlier;
+        }
+        Trace.TraceWarning("TokenMojo: cannot read the users of {0}; using home folder names as user names", distro);
+        return null;
     }
 
     // The account that owns the home folder; the folder's name when the distro could not say.

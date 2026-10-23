@@ -30,19 +30,23 @@ public static class LaunchTargets
         if (candidates.Count == 0) return new LaunchUser(null, string.Format(NoClaudeFolderText, distro), null);
 
         TmState first = TmState.Missing;
+        ClaudeSource? notChecked = null;
         for (int index = 0; index < candidates.Count; index++)
         {
             ClaudeSource candidate = candidates[index];
             TmState state = tmState(candidate);
             if (index == 0) first = state;
-            // Not knowing is not a reason to start as someone else.
-            if (state == TmState.Unchecked) return new LaunchUser(null, TmInstall.ProblemText(state, candidate.User!, distro, candidate.Home!), null);
+            // Not knowing about the default user is not a reason to start as someone else; for anyone else it is a reason to look on.
+            if (state == TmState.Unchecked && candidate.IsDefaultUser) return Problem(state, candidate, distro);
+            if (state == TmState.Unchecked) notChecked ??= candidate;
             if (state != TmState.Ours) continue;
             return new LaunchUser(candidate, null, index > 0 && candidates[0].IsDefaultUser ? NoteFor(candidate, candidates[0]) : null);
         }
-        ClaudeSource reported = candidates[0];
-        return new LaunchUser(null, TmInstall.ProblemText(first, reported.User!, distro, reported.Home!), null);
+        return notChecked is null ? Problem(first, candidates[0], distro) : Problem(TmState.Unchecked, notChecked, distro);
     }
+
+    private static LaunchUser Problem(TmState state, ClaudeSource source, string distro) =>
+        new(null, TmInstall.ProblemText(state, source.User!, distro, source.Home!), null);
 
     private static string NoteFor(ClaudeSource chosen, ClaudeSource defaultUser) =>
         $"Starting as {chosen.User}: the distro's default user, {defaultUser.User}, has no tm of cctokmon's to run.";
