@@ -71,17 +71,34 @@ resolve_symlinks() {
     printf '%s' "$path"
 }
 
+# Permission bits of a file, as chmod takes them (stat differs between macOS and Linux)
+file_mode() {
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        stat -f %Lp "$1"
+    else
+        stat -c %a "$1"
+    fi
+}
+
 # Rewrites settings.json with jq, passing it the given arguments. The result is built in a temp file next to
-# the real file (so the final mv is a same-filesystem rename), cp -p gives it the original's mode, and a
-# symlinked settings.json is written through, so the symlink stays. On any failure the original is untouched
-# and the temp file is removed.
+# the real file (so the final mv is a same-filesystem rename). The original's mode is applied to it after jq
+# has written it, so a read-only settings.json works. A symlinked settings.json is written through, so the
+# symlink stays. On any failure the original is untouched and the temp file is removed.
 SETTINGS_TMP=""
 trap '[[ -z "$SETTINGS_TMP" ]] || rm -f "$SETTINGS_TMP"' EXIT
 write_settings() {
-    local target
+    local target dir mode
     target=$(resolve_symlinks "$SETTINGS_FILE") || return 1
-    SETTINGS_TMP=$(mktemp "$(dirname "$target")/.settings.json.XXXXXX") || return 1
-    if cp -p "$target" "$SETTINGS_TMP" && jq "$@" "$target" > "$SETTINGS_TMP" && mv "$SETTINGS_TMP" "$target"; then
+    # Name the real, normalised location in any message
+    dir=$(cd "$(dirname "$target")" && pwd -P) || return 1
+    target="$dir/$(basename "$target")"
+    if [[ ! -w "$dir" ]]; then
+        err "Cannot update ${target}: its directory ${dir} is not writable. Fix the permissions there."
+        return 1
+    fi
+    mode=$(file_mode "$target") || return 1
+    SETTINGS_TMP=$(mktemp "$dir/.settings.json.XXXXXX") || return 1
+    if jq "$@" "$target" > "$SETTINGS_TMP" && chmod "$mode" "$SETTINGS_TMP" && mv "$SETTINGS_TMP" "$target"; then
         SETTINGS_TMP=""
         return 0
     fi
