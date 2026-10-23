@@ -7,15 +7,15 @@ namespace TokenMojo.Core;
 public static partial class RepoScanner
 {
     /// <summary>Never throws: a root or repository that cannot be read is skipped, since the distro may stop mid-scan.</summary>
-    /// <param name="user">Whose home folder a tilde root means; null skips the roots that start with a tilde.</param>
+    /// <param name="home">The home folder a tilde root means; null skips the roots that start with a tilde.</param>
     public static IReadOnlyList<RepoInfo> Scan(
-        string distro, string? user, IEnumerable<string> roots, string wslShareRoot = WslPaths.DefaultShareRoot)
+        string distro, string? home, IEnumerable<string> roots, string wslShareRoot = WslPaths.DefaultShareRoot)
     {
         List<RepoInfo> repos = new();
         HashSet<string> seen = new(StringComparer.Ordinal);
         foreach (string root in roots)
         {
-            if (LinuxFolder.Expand(root, user) is not { } folder) continue;
+            if (LinuxFolder.Expand(root, home) is not { } folder) continue;
             foreach (RepoInfo repo in ScanRoot(distro, folder.TrimEnd('/'), wslShareRoot))
             {
                 if (seen.Add(repo.Path)) repos.Add(repo);

@@ -17,8 +17,6 @@ namespace TokenMojo;
 public partial class LauncherWindow : Window
 {
     private const string NoDistroText = "No WSL distro is running. Open one, then reopen this window.";
-    private const string NoUserText =
-        "Could not find a Claude Code folder in {0}. Run install.sh in that distro, then reopen this window.";
     private const string NotOnDistroText =
         "Pick a folder inside {0}. Folders on other drives are not available to sessions started here.";
     private const string FolderInvalidText = "The folder must be ~, a path starting with ~/, or a path starting with /.";
@@ -33,11 +31,18 @@ public partial class LauncherWindow : Window
     private IReadOnlyList<RepoInfo> _repos = [];
     private string? _distro;
     private string? _user;
+    private string? _home;
+    // Why the launch user is not the distro's default one; shown beside the link hint.
+    private string? _userNote;
+    // The problem with the launch user, shown again when Start is pressed.
+    private string? _userProblem;
     // Set while the code fills in a field, so only the user's own edits mark it as chosen.
     private bool _applying;
     private bool _folderChosen;
     private bool _worktreeChosen;
     private bool _starting;
+    // True from a distro change until its user has been chosen; Start waits.
+    private bool _choosing;
     private bool _closed;
     // Each distro change starts a scan; only the latest one may update the window.
     private int _generation;
@@ -51,6 +56,8 @@ public partial class LauncherWindow : Window
         WindowChrome.Apply(this, round: false);
         FolderBox.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler(OnFolderTextChanged));
         Loaded += async (_, _) => await InitializeAsync();
+        // A launch in flight is never half-abandoned: the window stays until it has finished.
+        Closing += (_, e) => e.Cancel = _starting;
         Closed += (_, _) => _closed = true;
     }
 
@@ -113,22 +120,65 @@ public partial class LauncherWindow : Window
     {
         int generation = ++_generation;
         string distro = _distro!;
-        Settings settings = _settings!;
-        string? user = LaunchTargets.UserFor(_sources, distro);
-        _user = user;
+        // Nothing of the previous distro may be used to start a session in this one.
+        _user = null;
+        _home = null;
+        _userNote = null;
+        _userProblem = null;
+        _choosing = true;
+        UpdateStartEnabled();
+        LaunchUser choice = await ChooseUserAsync(distro);
+        if (_closed || generation != _generation) return;
         _repos = [];
-        HideError();
-        if (user is null) ShowError(string.Format(NoUserText, distro));
-        // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
-        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, user, _sessions, []));
-        ApplyHint();
-        StartButton.IsEnabled = true;
+        // A new home starts a new generation, which the scan below must carry.
+        ApplyUser(choice, distro);
+        generation = _generation;
+        _choosing = false;
+        UpdateStartEnabled();
+        await ScanReposAsync(distro, generation);
+    }
 
-        IReadOnlyList<RepoInfo> repos = await Task.Run(() => RepoScanner.Scan(distro, user, settings.RepoRoots));
+    // Only the generation it started in may use the answer: a newer distro or home has its own scan.
+    private async Task ScanReposAsync(string distro, int generation)
+    {
+        Settings settings = _settings!;
+        string? home = _home;
+        IReadOnlyList<RepoInfo> repos = await Task.Run(() => RepoScanner.Scan(distro, home, settings.RepoRoots));
         if (_closed || generation != _generation) return;
         _repos = repos;
-        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, user, _sessions, repos));
+        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, repos));
         ApplyHint();
+    }
+
+    private void UpdateStartEnabled() => StartButton.IsEnabled = !_starting && !_choosing;
+
+    // Asks the distro about each candidate's tm.
+    private Task<LaunchUser> ChooseUserAsync(string distro)
+    {
+        IReadOnlyList<ClaudeSource> sources = _sources;
+        WslTmInspector inspector = new();
+        return Task.Run(() => LaunchTargets.ChooseUser(sources, distro, source => inspector.Inspect(distro, source.User!)));
+    }
+
+    // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
+    // True when the home changed, which invalidates a scan in flight (it ends its generation) and empties the repository list.
+    private bool ApplyUser(LaunchUser choice, string distro)
+    {
+        bool homeChanged = _home != choice.Source?.Home;
+        _user = choice.Source?.User;
+        _home = choice.Source?.Home;
+        if (homeChanged)
+        {
+            _generation++;
+            _repos = [];
+        }
+        _userNote = choice.Note;
+        _userProblem = choice.Problem;
+        HideError();
+        if (choice.Problem is not null) ShowError(choice.Problem);
+        ShowFolders(FolderList.Build(_settings!.DefaultFolder, distro, _home, _sessions, _repos));
+        ApplyHint();
+        return homeChanged;
     }
 
     // Only the list changes: replacing the items can clear an editable box, and the user may be typing in it
@@ -152,11 +202,12 @@ public partial class LauncherWindow : Window
     {
         if (_settings is null) return;
         LaunchHint hint = LaunchHints.From(PromptBox.Text, _settings, _repos);
-        HintText.Text = hint.Description;
-        HintText.Visibility = hint.Description is null ? Visibility.Collapsed : Visibility.Visible;
+        string[] lines = new[] { hint.Description, _userNote }.OfType<string>().ToArray();
+        HintText.Text = string.Join("\n", lines);
+        HintText.Visibility = lines.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _applying = true;
         if (!_folderChosen)
-            FolderBox.Text = hint.Folder is { } folder ? LinuxFolder.Abbreviate(folder, _user) : _settings.DefaultFolder;
+            FolderBox.Text = hint.Folder is { } folder ? LinuxFolder.Abbreviate(folder, _home) : _settings.DefaultFolder;
         if (!_worktreeChosen)
         {
             WorktreeCheck.IsChecked = hint.UseWorktree;
@@ -182,16 +233,25 @@ public partial class LauncherWindow : Window
             ShowError(WorktreeNameMissingText);
             return;
         }
-        if (_user is not { } user)
-        {
-            ShowError(string.Format(NoUserText, distro));
-            return;
-        }
-        LaunchRequest request = new(distro, user, folder, worktree, PromptBox.Text);
         _starting = true;
-        StartButton.IsEnabled = false;
-        string? error = await Task.Run(() => TryLaunch(request));
-        _starting = false;
+        UpdateStartEnabled();
+        CancelButton.IsEnabled = false;
+        string? error;
+        try
+        {
+            error = await StartSessionAsync(distro, folder, worktree);
+        }
+        // This is the edge of an async void handler: nothing may escape it, and the window must stay closable.
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException or AggregateException)
+        {
+            System.Diagnostics.Trace.TraceWarning("TokenMojo: cannot start a session: {0}", e.Message);
+            error = $"Could not start the session: {e.Message}";
+        }
+        finally
+        {
+            _starting = false;
+            if (!_closed) CancelButton.IsEnabled = true;
+        }
         if (_closed) return;
         if (error is null)
         {
@@ -199,20 +259,35 @@ public partial class LauncherWindow : Window
             return;
         }
         ShowError(error);
-        StartButton.IsEnabled = true;
+        UpdateStartEnabled();
     }
 
     // Returns what to show the user when the session could not be started, else null.
+    private async Task<string?> StartSessionAsync(string distro, string folder, string? worktree)
+    {
+        if (_user is null)
+        {
+            // A check that failed (or found nothing) when the window opened must not stick: Start asks again.
+            int generation = _generation;
+            LaunchUser choice = await ChooseUserAsync(distro);
+            if (_closed || generation != _generation) return "The distro changed; press Start again.";
+            if (ApplyUser(choice, distro)) _ = ScanReposAsync(distro, _generation);
+            if (choice.Source is null) return choice.Problem;
+        }
+        LaunchRequest request = new(distro, _user!, folder, worktree, PromptBox.Text, _home);
+        return await Task.Run(() => TryLaunch(request));
+    }
+
     private static string? TryLaunch(LaunchRequest request)
     {
         try
         {
-            if (SessionControl.TmMissing(request.Distro, request.User))
-                return SessionControl.TmMissingMessage(request.Distro, request.User);
-            string? start = LinuxFolder.Expand(request.Folder, request.User);
+            // Checked again: it was inspected when the window opened, which may be a while ago.
+            if (SessionControl.TmProblem(request.Distro, request.User, request.Home) is { } problem) return problem;
+            string? start = LinuxFolder.Expand(request.Folder, request.Home);
             if (start is null || !Directory.Exists(WslPaths.SharePath(request.Distro, start)))
                 return $"The folder does not exist in {request.Distro}: {request.Folder}";
-            SessionLauncher.Launch(request, LaunchPrompt.DirectoryOnShare(request.Distro, request.User), TerminalProcess.Start);
+            SessionLauncher.Launch(request, new WslPromptHandoff(), TerminalProcess.Start);
             return null;
         }
         catch (Exception e) when (e is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
@@ -223,6 +298,9 @@ public partial class LauncherWindow : Window
     }
 
     private async void OnStart(object sender, RoutedEventArgs e) => await StartAsync();
+
+    // IsCancel only closes a window shown with ShowDialog, and this one is shown with Show. Closing is refused while a launch is in flight.
+    private void OnCancel(object sender, RoutedEventArgs e) => Close();
 
     // Enter starts; Shift+Enter falls through to the box, which adds a line.
     private async void OnPromptKeyDown(object sender, KeyEventArgs e)
@@ -266,7 +344,7 @@ public partial class LauncherWindow : Window
         OpenFolderDialog dialog = new()
         {
             Title = $"Choose a folder in {distro}",
-            InitialDirectory = WslPaths.SharePath(distro, _user is null ? "/" : WslPaths.HomeFolder(_user)),
+            InitialDirectory = WslPaths.SharePath(distro, _home ?? "/"),
         };
         if (dialog.ShowDialog(this) != true) return;
         if (WslPaths.ToLinuxPath(dialog.FolderName, distro) is not { } linuxPath)
@@ -276,7 +354,7 @@ public partial class LauncherWindow : Window
         }
         HideError();
         _applying = true;
-        FolderBox.Text = LinuxFolder.Abbreviate(linuxPath, _user);
+        FolderBox.Text = LinuxFolder.Abbreviate(linuxPath, _home);
         _applying = false;
         _folderChosen = true;
     }
