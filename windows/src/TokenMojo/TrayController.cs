@@ -32,7 +32,7 @@ internal sealed class TrayController : IDisposable
     private IReadOnlyList<ClaudeSource> _sources = [];
     private DateTimeOffset _lastDiscovery = DateTimeOffset.MinValue;
     private BridgeSnapshot? _latest;
-    private IReadOnlyList<SessionSnapshot>? _previousSessions;
+    private IReadOnlyDictionary<string, SeenStatus>? _alertBaseline;
     private bool _refreshing;
 
     public TrayController()
@@ -125,8 +125,8 @@ internal sealed class TrayController : IDisposable
     {
         // Without data or settings there is nothing to compare, so keep the last baseline.
         if (snapshot.Current is null || snapshot.Settings is null) return;
-        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_previousSessions, snapshot.Sessions, snapshot.Settings.LongTurn);
-        _previousSessions = snapshot.Sessions;
+        IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_alertBaseline, snapshot.Sessions, snapshot.Settings.LongTurn);
+        _alertBaseline = StatusAlerts.Advance(_alertBaseline, snapshot.Sessions, DateTimeOffset.Now);
         if (alerts.Count == 0) return;
         // One balloon replaces the last, so several alerts in one refresh share it.
         string title = alerts.Count == 1 ? alerts[0].Title : $"{alerts.Count} sessions need you";
