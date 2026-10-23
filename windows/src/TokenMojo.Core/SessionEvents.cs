@@ -20,7 +20,7 @@ public static class SessionEvents
     public static SessionEventState Reduce(IEnumerable<string> lines, DateTimeOffset now)
     {
         SessionEventState none = new(SessionStatus.None, null, null);
-        Tracking tracking = new(none, ImmutableDictionary<string, DateTimeOffset>.Empty, null, none);
+        Tracking tracking = new(none, ImmutableDictionary<string, DateTimeOffset>.Empty, none);
         foreach (string line in lines)
         {
             if (TryParse(line) is { } hookEvent)
@@ -33,51 +33,75 @@ public static class SessionEvents
     private static Tracking Apply(Tracking tracking, HookEvent hookEvent)
     {
         DateTimeOffset t = hookEvent.Time;
-        SessionEventState main = tracking.Main;
-        bool ended = main.Status == SessionStatus.Ended;
-        ImmutableDictionary<string, DateTimeOffset> subagents = tracking.Subagents;
-        bool isSubagentEvent = hookEvent.Agent is not null && hookEvent.Name != "Notification";
-
         if (hookEvent.Name == "SessionEnd" || (hookEvent.Name == "SessionStart" && hookEvent.Source != "compact"))
-            subagents = subagents.Clear();
-        else if (ended)
+            tracking = tracking with { Subagents = tracking.Subagents.Clear() };
+        else if (tracking.Main.Status == SessionStatus.Ended)
             return Show(tracking, t, t);
         else if (hookEvent.Name == "SubagentStop" && hookEvent.Agent is { } stopped)
-            subagents = subagents.Remove(stopped);
+            tracking = tracking with { Subagents = tracking.Subagents.Remove(stopped) };
         else if (hookEvent.Agent is { } seen)
-            subagents = subagents.SetItem(seen, t);
+            tracking = tracking with { Subagents = tracking.Subagents.SetItem(seen, t) };
 
-        SessionEventState next = main;
-        SessionEventState? idle = tracking.IdleBeforePrompt;
-        if (!isSubagentEvent)
-            next = ApplyToStatus(main, hookEvent);
-        // The prompt a subagent's tool was waiting on is answered; the main agent had stopped before it came up.
-        else if (hookEvent.Name is "PostToolUse" or "PostToolUseFailure" && main.Status == SessionStatus.NeedsInput)
-            next = idle ?? Enter(main, SessionStatus.Working, t, main.TurnStarted);
-
+        SessionEventState main = tracking.Main;
+        SessionEventState next = NextMain(tracking, hookEvent);
+        string? promptAgent = tracking.PromptAgent;
+        SessionEventState? interrupted = tracking.Interrupted;
         if (next.Status != SessionStatus.NeedsInput)
-            idle = null;
-        else if (main.Status != SessionStatus.NeedsInput)
-            idle = main.Status == SessionStatus.Ready ? main : null;
+            (promptAgent, interrupted) = (null, null);
+        else if (hookEvent.Name == "Notification")
+        {
+            // A second prompt replaces the first as the one shown and owned; the first is not restored when it clears.
+            promptAgent = hookEvent.Agent;
+            if (main.Status != SessionStatus.NeedsInput) interrupted = main;
+        }
 
-        return Show(tracking with { Main = next, Subagents = subagents, IdleBeforePrompt = idle }, t, t);
+        return Show(tracking with { Main = next, PromptAgent = promptAgent, Interrupted = interrupted }, t, t);
     }
+
+    // Subagents never change the main state. They only release a prompt of their own, and a prompt the main agent
+    // raised is cleared only by the main agent's own tool events.
+    private static SessionEventState NextMain(Tracking tracking, HookEvent hookEvent)
+    {
+        SessionEventState main = tracking.Main;
+        bool subagentPrompt = main.Status == SessionStatus.NeedsInput && tracking.PromptAgent is not null;
+        bool toolEvent = hookEvent.Name is "PreToolUse" or "PostToolUse" or "PostToolUseFailure";
+        bool toolFinished = hookEvent.Name is "PostToolUse" or "PostToolUseFailure";
+        return hookEvent.Name switch
+        {
+            "Notification" => ApplyToStatus(main, hookEvent),
+            "SubagentStop" when subagentPrompt && hookEvent.Agent == tracking.PromptAgent => Release(tracking, hookEvent.Time),
+            _ when hookEvent.Name.StartsWith("Subagent", StringComparison.Ordinal) => main,
+            _ when toolFinished && subagentPrompt && hookEvent.Agent == tracking.PromptAgent => Release(tracking, hookEvent.Time),
+            _ when hookEvent.Agent is not null => main,
+            _ when toolEvent && subagentPrompt => main,
+            _ => ApplyToStatus(main, hookEvent),
+        };
+    }
+
+    // Back to what the prompt interrupted.
+    private static SessionEventState Release(Tracking tracking, DateTimeOffset t) =>
+        tracking.Interrupted ?? Enter(tracking.Main, SessionStatus.Working, t, tracking.Main.TurnStarted);
 
     // An id not heard from for ten minutes counts as finished, so a lost SubagentStop cannot pin the session.
     private static Tracking Settle(Tracking tracking, DateTimeOffset at)
     {
-        if (ShownStatus(tracking, at) == tracking.Shown.Status) return tracking;
-        // Only an expiry can change the display with no event, and it happened when the last live id timed out.
-        DateTimeOffset expiredAt = tracking.Subagents.Values.Max() + SubagentLifetime;
-        return Show(tracking, at, expiredAt);
+        if (tracking.Main.Status == SessionStatus.NeedsInput && tracking.PromptAgent is { } asker
+            && !(tracking.Subagents.TryGetValue(asker, out DateTimeOffset askerSeen) && at - askerSeen < SubagentLifetime))
+            tracking = tracking with { Main = Release(tracking, at), PromptAgent = null, Interrupted = null };
+        // Only working to ready by expiry is dated by the expiry itself; any other change found here happened by now.
+        bool expired = tracking.Shown.Status == SessionStatus.Working && ShownStatus(tracking, at) == SessionStatus.Ready
+            && !tracking.Subagents.IsEmpty;
+        return Show(tracking, at, expired ? tracking.Subagents.Values.Max() + SubagentLifetime : at);
     }
 
+    // Since is never after the moment the state was computed for.
     private static Tracking Show(Tracking tracking, DateTimeOffset at, DateTimeOffset changedAt)
     {
         SessionStatus status = ShownStatus(tracking, at);
         // Since is when the shown status was entered, so an event that leaves it as it was keeps it.
-        DateTimeOffset? since = status == tracking.Shown.Status ? tracking.Shown.Since : changedAt;
-        return tracking with { Shown = new SessionEventState(status, since, tracking.Main.TurnStarted) };
+        DateTimeOffset since = (status == tracking.Shown.Status ? tracking.Shown.Since : changedAt) ?? changedAt;
+        DateTimeOffset clamped = since < at ? since : at;
+        return tracking with { Shown = new SessionEventState(status, status == SessionStatus.None ? null : clamped, tracking.Main.TurnStarted) };
     }
 
     private static SessionStatus ShownStatus(Tracking tracking, DateTimeOffset at) =>
@@ -147,9 +171,11 @@ public static class SessionEvents
             ? text
             : null;
 
-    // Main is the main agent's state, Shown what the row displays; IdleBeforePrompt is the Ready state a question interrupted.
+    // Main is the main agent's state, Shown what the row displays. PromptAgent is the subagent that raised the open
+    // prompt (null for the main agent) and Interrupted the state that prompt interrupted.
     private sealed record Tracking(
-        SessionEventState Main, ImmutableDictionary<string, DateTimeOffset> Subagents, SessionEventState? IdleBeforePrompt, SessionEventState Shown);
+        SessionEventState Main, ImmutableDictionary<string, DateTimeOffset> Subagents, SessionEventState Shown,
+        string? PromptAgent = null, SessionEventState? Interrupted = null);
 
     private sealed record HookEvent(DateTimeOffset Time, string Name, string? Notification, string? Source, string? Agent);
 }
