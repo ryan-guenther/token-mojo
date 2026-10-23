@@ -138,22 +138,26 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
-    public void LoadSessions_SubagentStillRunningAfterTheMainStop_IsWorkingWithItsCount()
+    public void LoadSessions_SubagentStillRunningAfterTheMainStop_IsWorkingWithItsCountUntilItExpires()
     {
         // Arrange
         ClaudeSource source = _temp.Source("win");
+        long start = Now.AddMinutes(-20).ToUnixTimeSeconds();
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
         _temp.Write("win/cctokmon-sessions/a.events", string.Join("\n",
-            """{"t":1010,"e":"UserPromptSubmit"}""",
-            """{"t":1020,"e":"SubagentStart","a":"sub-1"}""",
-            """{"t":1030,"e":"Stop"}""") + "\n", Now);
+            $$"""{"t":{{start}},"e":"UserPromptSubmit"}""",
+            $$"""{"t":{{start + 600}},"e":"SubagentStart","a":"sub-1"}""",
+            $$"""{"t":{{start + 660}},"e":"Stop"}""") + "\n", Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([source], Now).Single();
+        SessionSnapshot running = SessionStore.LoadSessions([source], Now.AddMinutes(-5)).Single();
+        SessionSnapshot expired = SessionStore.LoadSessions([source], Now).Single();
 
         // Assert
-        Assert.Equal(SessionStatus.Working, session.Status);
-        Assert.Equal(1, session.Subagents);
+        Assert.Equal(SessionStatus.Working, running.Status);
+        Assert.Equal(1, running.Subagents);
+        Assert.Equal(SessionStatus.Ready, expired.Status);
+        Assert.Equal(0, expired.Subagents);
     }
 
     [Fact]

@@ -10,7 +10,7 @@ public class SessionEventsTests
     public void Reduce_NoLines_HasNoStatus()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([]);
+        SessionEventState state = Reduce([]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.None, null, null), state);
@@ -20,7 +20,7 @@ public class SessionEventsTests
     public void Reduce_SessionStart_IsReadyWithNoTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionStart", source: "startup")]);
+        SessionEventState state = Reduce([Line(100, "SessionStart", source: "startup")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ready, At(100), null), state);
@@ -30,7 +30,7 @@ public class SessionEventsTests
     public void Reduce_SessionStartAfterCompact_ChangesNothing()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionStart", source: "compact")]);
+        SessionEventState state = Reduce([Line(100, "SessionStart", source: "compact")]);
 
         // Assert
         Assert.Equal(SessionStatus.None, state.Status);
@@ -40,7 +40,7 @@ public class SessionEventsTests
     public void Reduce_CompactMidTurn_KeepsTheTurnStart()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(130, "SessionStart", source: "compact")]);
 
         // Assert
@@ -51,7 +51,7 @@ public class SessionEventsTests
     public void Reduce_UserPromptSubmit_IsWorkingAndStartsTheTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionStart"), Line(110, "UserPromptSubmit")]);
+        SessionEventState state = Reduce([Line(100, "SessionStart"), Line(110, "UserPromptSubmit")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(110), At(110)), state);
@@ -61,7 +61,7 @@ public class SessionEventsTests
     public void Reduce_PromptWhileAlreadyWorking_KeepsSinceAndTheTurnStart()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "UserPromptSubmit"), Line(150, "UserPromptSubmit")]);
+        SessionEventState state = Reduce([Line(100, "UserPromptSubmit"), Line(150, "UserPromptSubmit")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100)), state);
@@ -71,7 +71,7 @@ public class SessionEventsTests
     public void Reduce_PromptWhileNeedingInput_IsWorkingAndKeepsTheTurnStart()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(110, "Notification", notification: Permission), Line(150, "UserPromptSubmit")]);
 
         // Assert
@@ -82,7 +82,7 @@ public class SessionEventsTests
     public void Reduce_PromptWhileReady_StartsANewTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(160, "Stop"), Line(300, "UserPromptSubmit")]);
 
         // Assert
@@ -93,7 +93,7 @@ public class SessionEventsTests
     public void Reduce_PromptAfterSessionEnd_StaysEndedBecauseAResumeStartsWithSessionStart()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionEnd"), Line(200, "UserPromptSubmit")]);
+        SessionEventState state = Reduce([Line(100, "SessionEnd"), Line(200, "UserPromptSubmit")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ended, At(100), null), state);
@@ -110,16 +110,18 @@ public class SessionEventsTests
             Line(102, "PreToolUse"),
             Line(103, "PostToolUse"),
             Line(104, "PreToolUse"),
-            Line(105, "PreToolUse", agent: "agent-1"),
+            Line(105, "SubagentStart", agent: "agent-1"),
+            Line(106, "PreToolUse", agent: "agent-1"),
             Line(130, "PostToolUse", agent: "agent-1"),
+            Line(130, "SubagentStop", agent: "agent-1"),
             Line(131, "PostToolUse"),
             Line(132, "UserPromptSubmit"),
             Line(140, "Stop"),
         ];
 
         // Act
-        SessionEventState finished = SessionEvents.Reduce(lines);
-        SessionEventState ended = SessionEvents.Reduce([.. lines, Line(150, "SessionEnd")]);
+        SessionEventState finished = Reduce(lines);
+        SessionEventState ended = Reduce([.. lines, Line(150, "SessionEnd")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ready, At(140), At(101)), finished);
@@ -130,7 +132,7 @@ public class SessionEventsTests
     public void Reduce_ToolUseWhileWorking_KeepsSince()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(120, "PreToolUse"), Line(125, "PostToolUse")]);
 
         // Assert
@@ -141,7 +143,7 @@ public class SessionEventsTests
     public void Reduce_MainAgentPreToolUseAfterPermissionPrompt_ClearsNeedsInputBecauseTheNextToolCallFollowsADenial()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(110, "Notification", notification: Permission), Line(115, "PreToolUse")]);
 
         // Assert
@@ -152,7 +154,7 @@ public class SessionEventsTests
     public void Reduce_SubagentPreToolUseAfterPermissionPrompt_StaysNeedsInput()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(110, "Notification", notification: Permission),
                 Line(112, "PreToolUse", agent: "sub-1")]);
 
@@ -168,7 +170,7 @@ public class SessionEventsTests
     public void Reduce_ToolFinishingAfterPermissionPrompt_ClearsNeedsInput(string toolEvent, string? agent)
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(110, "Notification", notification: Permission),
                 Line(120, toolEvent, agent: agent)]);
 
@@ -180,7 +182,7 @@ public class SessionEventsTests
     public void Reduce_PostToolUseFailureWhileReady_StartsAnUnpromptedTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionStart"), Line(200, "PostToolUseFailure")]);
+        SessionEventState state = Reduce([Line(100, "SessionStart"), Line(200, "PostToolUseFailure")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(200), At(200)), state);
@@ -190,7 +192,7 @@ public class SessionEventsTests
     public void Reduce_PostToolUseFailureAfterSessionEnd_StaysEnded()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionEnd"), Line(110, "PostToolUseFailure")]);
+        SessionEventState state = Reduce([Line(100, "SessionEnd"), Line(110, "PostToolUseFailure")]);
 
         // Assert
         Assert.Equal(SessionStatus.Ended, state.Status);
@@ -200,7 +202,7 @@ public class SessionEventsTests
     public void Reduce_NeedsInputFromReady_StartsTheTurnSoAnOldTurnStartNeverMakesAFinishedAlert()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(160, "Stop"), Line(900, "Notification", notification: Permission)]);
 
         // Assert
@@ -211,7 +213,7 @@ public class SessionEventsTests
     public void Reduce_NeedsInputWithNoEarlierEvents_StartsTheTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(900, "Notification", notification: Permission)]);
+        SessionEventState state = Reduce([Line(900, "Notification", notification: Permission)]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.NeedsInput, At(900), At(900)), state);
@@ -221,7 +223,7 @@ public class SessionEventsTests
     public void Reduce_ToolUseWhileReady_StartsAnUnpromptedTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "SessionStart"), Line(200, "PreToolUse")]);
 
         // Assert
@@ -232,7 +234,7 @@ public class SessionEventsTests
     public void Reduce_PostToolUseWhileReady_StartsAnUnpromptedTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionStart"), Line(200, "PostToolUse")]);
+        SessionEventState state = Reduce([Line(100, "SessionStart"), Line(200, "PostToolUse")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(200), At(200)), state);
@@ -242,7 +244,7 @@ public class SessionEventsTests
     public void Reduce_ToolUseWithNoEarlierEvents_IsWorkingWithTheEventAsALowerBoundForTheTurnStart()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "PreToolUse")]);
+        SessionEventState state = Reduce([Line(100, "PreToolUse")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100)), state);
@@ -256,7 +258,7 @@ public class SessionEventsTests
     public void Reduce_QuestionNotification_IsNeedsInput(string notification)
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(110, "Notification", notification: notification)]);
 
         // Assert
@@ -269,7 +271,7 @@ public class SessionEventsTests
     public void Reduce_OtherNotification_ChangesNothing(string? notification)
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(110, "Notification", notification: notification)]);
 
         // Assert
@@ -280,7 +282,7 @@ public class SessionEventsTests
     public void Reduce_NotificationAfterSessionEnd_StaysEnded()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "SessionEnd"), Line(110, "Notification", notification: Permission)]);
 
         // Assert
@@ -291,7 +293,7 @@ public class SessionEventsTests
     public void Reduce_Stop_IsReadyAndKeepsTheTurnStart()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "UserPromptSubmit"), Line(160, "Stop")]);
+        SessionEventState state = Reduce([Line(100, "UserPromptSubmit"), Line(160, "Stop")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ready, At(160), At(100)), state);
@@ -301,7 +303,7 @@ public class SessionEventsTests
     public void Reduce_StopWhileAlreadyReady_KeepsSince()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionStart"), Line(160, "Stop")]);
+        SessionEventState state = Reduce([Line(100, "SessionStart"), Line(160, "Stop")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ready, At(100), null), state);
@@ -311,7 +313,7 @@ public class SessionEventsTests
     public void Reduce_SessionEnd_IsEndedWithNoTurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "UserPromptSubmit"), Line(160, "SessionEnd")]);
+        SessionEventState state = Reduce([Line(100, "UserPromptSubmit"), Line(160, "SessionEnd")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ended, At(160), null), state);
@@ -321,7 +323,7 @@ public class SessionEventsTests
     public void Reduce_LateEventsAfterSessionEnd_StayEnded()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(160, "SessionEnd"), Line(161, "PreToolUse"), Line(162, "PostToolUse"),
                 Line(163, "Stop")]);
 
@@ -333,7 +335,7 @@ public class SessionEventsTests
     public void Reduce_SessionStartAfterEnd_IsReadyAgain()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "SessionEnd"), Line(200, "SessionStart", source: "resume")]);
+        SessionEventState state = Reduce([Line(100, "SessionEnd"), Line(200, "SessionStart", source: "resume")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ready, At(200), null), state);
@@ -343,7 +345,7 @@ public class SessionEventsTests
     public void Reduce_BackgroundWake_UsesTheNewTurnStart()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), Line(160, "Stop"), Line(500, "PreToolUse"), Line(560, "Stop")]);
 
         // Assert
@@ -354,7 +356,7 @@ public class SessionEventsTests
     public void Reduce_UnknownEvent_ChangesNothing()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "UserPromptSubmit"), Line(110, "Mystery")]);
+        SessionEventState state = Reduce([Line(100, "UserPromptSubmit"), Line(110, "Mystery")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100)), state);
@@ -374,7 +376,7 @@ public class SessionEventsTests
     public void Reduce_MalformedOrPartialLine_IsSkipped(string malformed)
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = Reduce(
             [Line(100, "UserPromptSubmit"), malformed, Line(120, "PreToolUse")]);
 
         // Assert
@@ -382,33 +384,31 @@ public class SessionEventsTests
     }
 
     [Fact]
-    public void Reduce_StopWhileASubagentIsActive_StaysWorkingAndKeepsTheTurnStart()
+    public void Reduce_RealCapturedOrderWithABackgroundSubagent_IsWorkingThroughTheSilenceAfterTheMainStop()
     {
+        // Arrange: Stop, then nothing while the subagent's model call ran
+        string[] lines =
+        [
+            Line(100, "SessionStart", source: "startup"), Line(101, "UserPromptSubmit"), Line(102, "PreToolUse"),
+            Line(103, "SubagentStart", agent: "a8a4bbd10ee559df4"), Line(104, "PostToolUse"),
+            Line(105, "PreToolUse", agent: "a8a4bbd10ee559df4"), Line(106, "PostToolUse", agent: "a8a4bbd10ee559df4"),
+            Line(107, "Stop"),
+        ];
+
         // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop")]);
+        SessionEventState silent = ReduceAt(150, lines);
+        SessionEventState done = ReduceAt(160, [.. lines, Line(151, "SubagentStop", agent: "a8a4bbd10ee559df4")]);
 
         // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), state);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(101), At(101), 1), silent);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(151), At(101)), done);
     }
 
     [Fact]
-    public void Reduce_LastSubagentStopAfterTheMainStop_IsReadyFromThatMomentOfTheSameTurn()
+    public void Reduce_SubagentStopBeforeTheMainStop_IsReadyAtTheStop()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
-                Line(165, "SubagentStop", agent: "sub-1")]);
-
-        // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(165), At(100)), state);
-    }
-
-    [Fact]
-    public void Reduce_SubagentStopBeforeTheMainStop_LeavesTheStopToMakeItReady()
-    {
-        // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = ReduceAt(200,
             [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(150, "SubagentStop", agent: "sub-1"),
                 Line(160, "Stop")]);
 
@@ -417,7 +417,93 @@ public class SessionEventsTests
     }
 
     [Fact]
-    public void Reduce_TwoSubagentsAfterTheMainStop_AreReadyOnlyWhenTheLastOneStops()
+    public void Reduce_SubagentRunsAfterTheMainAgentWasReady_IsWorkingUntilItStopsWithoutStartingATurn()
+    {
+        // Arrange: the main agent stopped with no subagent active
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(120, "Stop"), Line(130, "SubagentStart", agent: "sub-1"),
+            Line(140, "PreToolUse", agent: "sub-1"), Line(150, "PostToolUse", agent: "sub-1"),
+        ];
+
+        // Act
+        SessionEventState running = ReduceAt(155, lines);
+        SessionEventState done = ReduceAt(200, [.. lines, Line(160, "SubagentStop", agent: "sub-1")]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(130), At(100), 1), running);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(160), At(100)), done);
+    }
+
+    [Fact]
+    public void Reduce_SubagentToolEventsWithoutAStart_AreWorkingUntilItsStop()
+    {
+        // Arrange: the start was cut off by the tail window, or never logged
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(120, "Stop"), Line(140, "PreToolUse", agent: "sub-1"),
+            Line(150, "PostToolUse", agent: "sub-1"),
+        ];
+
+        // Act
+        SessionEventState running = ReduceAt(155, lines);
+        SessionEventState done = ReduceAt(200, [.. lines, Line(160, "SubagentStop", agent: "sub-1")]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(140), At(100), 1), running);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(160), At(100)), done);
+    }
+
+    [Fact]
+    public void Reduce_SubagentThatNeverStops_ExpiresTenMinutesAfterItsLastEvent()
+    {
+        // Arrange
+        string[] lines = [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop")];
+
+        // Act
+        SessionEventState silent = ReduceAt(300, lines);
+        SessionEventState justBefore = ReduceAt(709, lines);
+        SessionEventState expired = ReduceAt(710, lines);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), silent);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), justBefore);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(710), At(100)), expired);
+    }
+
+    [Fact]
+    public void Reduce_ExpiredSubagent_DoesNotPinALaterTurn()
+    {
+        // Act
+        SessionEventState state = ReduceAt(1000,
+            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
+                Line(900, "UserPromptSubmit"), Line(950, "Stop")]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(950), At(900)), state);
+    }
+
+    [Fact]
+    public void Reduce_SubagentEventsKeepItAlive_UntilTenMinutesAfterTheLastOne()
+    {
+        // Arrange
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
+            Line(600, "PreToolUse", agent: "sub-1"),
+        ];
+
+        // Act
+        SessionEventState alive = ReduceAt(1100, lines);
+        SessionEventState expired = ReduceAt(1300, lines);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), alive);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(1200), At(100)), expired);
+    }
+
+    [Fact]
+    public void Reduce_TwoSubagents_AreReadyOnlyWhenTheLastOneStops()
     {
         // Arrange
         string[] lines =
@@ -427,8 +513,8 @@ public class SessionEventsTests
         ];
 
         // Act
-        SessionEventState oneLeft = SessionEvents.Reduce(lines);
-        SessionEventState allDone = SessionEvents.Reduce([.. lines, Line(180, "SubagentStop", agent: "sub-2")]);
+        SessionEventState oneLeft = ReduceAt(160, lines);
+        SessionEventState allDone = ReduceAt(190, [.. lines, Line(180, "SubagentStop", agent: "sub-2")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), oneLeft);
@@ -436,46 +522,55 @@ public class SessionEventsTests
     }
 
     [Fact]
-    public void Reduce_SubagentToolEventAfterTheMainStop_KeepsTheSameTurn()
+    public void Reduce_SubagentPermissionPromptWhileTheMainAgentIsIdle_ReturnsToWorkingOnItsToolEvent()
     {
+        // Arrange
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
+            Line(130, "Notification", notification: Permission),
+        ];
+        string[] answered = [.. lines, Line(140, "PostToolUse", agent: "sub-1")];
+
         // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
-                Line(130, "PreToolUse", agent: "sub-1"), Line(135, "PostToolUse", agent: "sub-1")]);
+        SessionEventState waiting = ReduceAt(135, lines);
+        SessionEventState working = ReduceAt(145, answered);
+        SessionEventState done = ReduceAt(160, [.. answered, Line(150, "SubagentStop", agent: "sub-1")]);
 
         // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), state);
+        Assert.Equal(SessionStatus.NeedsInput, waiting.Status);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(140), At(100), 1), working);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(150), At(100)), done);
     }
 
     [Fact]
-    public void Reduce_SubagentStopForAnUnknownId_ChangesNothing()
+    public void Reduce_SubagentStopWhoseStartWasCut_ChangesNothing()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStop", agent: "cut-off"), Line(120, "Stop")]);
+        SessionEventState state = ReduceAt(200,
+            [Line(100, "UserPromptSubmit"), Line(120, "Stop"), Line(130, "SubagentStop", agent: "cut-off")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ready, At(120), At(100)), state);
     }
 
     [Fact]
-    public void Reduce_SubagentStartTwiceForOneId_CountsOnce()
+    public void Reduce_SubagentStopAfterItExpired_KeepsTheExpiryAsTheReadyTime()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(111, "SubagentStart", agent: "sub-1")]);
+        SessionEventState state = ReduceAt(2000,
+            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
+                Line(1500, "SubagentStop", agent: "sub-1")]);
 
         // Assert
-        Assert.Equal(1, state.Subagents);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(710), At(100)), state);
     }
 
-    [Theory]
-    [InlineData("SubagentStart")]
-    [InlineData("SubagentStop")]
-    public void Reduce_SubagentEventWithoutAnId_ChangesNothing(string subagentEvent)
+    [Fact]
+    public void Reduce_SubagentEventWithoutAnId_ChangesNothing()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce([Line(100, "UserPromptSubmit"), Line(110, subagentEvent)]);
+        SessionEventState state = ReduceAt(120, [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100)), state);
@@ -485,7 +580,7 @@ public class SessionEventsTests
     public void Reduce_SessionEndWithActiveSubagents_IsEndedWithNoneCounted()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = ReduceAt(140,
             [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"), Line(130, "SessionEnd")]);
 
         // Assert
@@ -496,87 +591,50 @@ public class SessionEventsTests
     public void Reduce_SessionStartClearsSubagentsLeftByACrash()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = ReduceAt(210,
             [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
-                Line(200, "SessionStart", source: "resume"), Line(210, "UserPromptSubmit"), Line(220, "Stop")]);
+                Line(200, "SessionStart", source: "resume")]);
 
         // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(220), At(210)), state);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(200), null), state);
     }
 
     [Fact]
     public void Reduce_SessionStartAfterCompact_KeepsTheActiveSubagents()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
+        SessionEventState state = ReduceAt(140,
             [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(130, "SessionStart", source: "compact")]);
 
         // Assert
-        Assert.Equal(1, state.Subagents);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), 1), state);
     }
 
-    [Theory]
-    [InlineData("SubagentStart")]
-    [InlineData("SubagentStop")]
-    public void Reduce_SubagentEventAfterSessionEnd_StaysEnded(string subagentEvent)
+    [Fact]
+    public void Reduce_SubagentEventsAfterSessionEnd_StayEnded()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "SessionEnd"), Line(110, subagentEvent, agent: "sub-1")]);
+        SessionEventState state = ReduceAt(130,
+            [Line(100, "SessionEnd"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "PreToolUse", agent: "sub-1")]);
 
         // Assert
         Assert.Equal(new SessionEventState(SessionStatus.Ended, At(100), null), state);
     }
 
     [Fact]
-    public void Reduce_MainAgentActsAgainAfterTheStop_StaysWorkingWhenTheLastSubagentStops()
+    public void Reduce_SubagentToolEventWhileReady_ShowsWorkingWithoutStartingATurn()
     {
         // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
-                Line(130, "UserPromptSubmit"), Line(140, "SubagentStop", agent: "sub-1")]);
+        SessionEventState state = ReduceAt(150, [Line(100, "SessionStart"), Line(110, "PreToolUse", agent: "sub-1")]);
 
         // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100)), state);
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(110), null, 1), state);
     }
 
-    [Fact]
-    public void Reduce_PermissionPromptWhileOnlySubagentsRun_StillGoesReadyWhenTheLastOneStops()
-    {
-        // Act
-        SessionEventState state = SessionEvents.Reduce(
-            [Line(100, "UserPromptSubmit"), Line(110, "SubagentStart", agent: "sub-1"), Line(120, "Stop"),
-                Line(130, "Notification", notification: Permission), Line(140, "PostToolUse", agent: "sub-1"),
-                Line(150, "SubagentStop", agent: "sub-1")]);
+    private static SessionEventState ReduceAt(long now, IEnumerable<string> lines) => SessionEvents.Reduce(lines, At(now));
 
-        // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(150), At(100)), state);
-    }
-
-    [Fact]
-    public void Reduce_RealSessionWithABackgroundSubagent_IsWorkingThroughTheSilenceAfterTheMainStop()
-    {
-        // Arrange: Stop, then nothing for 44 s while the subagent's model call ran
-        string[] lines =
-        [
-            Line(100, "SessionStart", source: "startup"),
-            Line(101, "UserPromptSubmit"),
-            Line(102, "PreToolUse"),
-            Line(103, "SubagentStart", agent: "a8a4bbd10ee559df4"),
-            Line(104, "PostToolUse"),
-            Line(105, "PreToolUse", agent: "a8a4bbd10ee559df4"),
-            Line(106, "PostToolUse", agent: "a8a4bbd10ee559df4"),
-            Line(107, "Stop"),
-        ];
-
-        // Act
-        SessionEventState silent = SessionEvents.Reduce(lines);
-        SessionEventState done = SessionEvents.Reduce([.. lines, Line(151, "SubagentStop", agent: "a8a4bbd10ee559df4")]);
-
-        // Assert
-        Assert.Equal(new SessionEventState(SessionStatus.Working, At(101), At(101), 1), silent);
-        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(151), At(101)), done);
-    }
+    // Far after every event, so a subagent that never stopped has expired.
+    private static SessionEventState Reduce(IEnumerable<string> lines) => SessionEvents.Reduce(lines, At(1_000_000));
 
     private static string Line(long t, string e, string? agent = null, string? notification = null, string? source = null)
     {
