@@ -22,7 +22,7 @@ public static class GitBash
     {
         if (getEnv("CLAUDE_CODE_GIT_BASH_PATH") is { Length: > 0 } configured)
         {
-            string path = configured.Trim('"');
+            string path = configured.Trim('"').Replace('/', '\\');
             if (path.EndsWith(UsrBinBash, StringComparison.OrdinalIgnoreCase))
                 yield return path[..^UsrBinBash.Length] + BinBash;
             yield return path;
@@ -34,6 +34,15 @@ public static class GitBash
         if (getEnv("LOCALAPPDATA") is { Length: > 0 } localAppData)
             yield return Join(localAppData, @"Programs\Git\" + BinBash);
     }
+
+    /// <summary>
+    /// The folder Git Bash's ~ is: HOME when it is set to a full Windows path, as some machines set it to a network drive,
+    /// else the user profile. Where install.sh put tm and where tm looks for a prompt file.
+    /// </summary>
+    public static string Home(Func<string, string?> getEnv, string userProfile) =>
+        getEnv("HOME") is { Length: > 0 } home && WindowsFolder.IsValid(home) && !home.StartsWith(WindowsFolder.Home, StringComparison.Ordinal)
+            ? home
+            : userProfile;
 
     // Windows paths, whatever platform the tests run on.
     private static string Join(string folder, string relative) => folder.TrimEnd('\\') + @"\" + relative;

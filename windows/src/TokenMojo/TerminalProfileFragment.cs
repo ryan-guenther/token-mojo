@@ -17,7 +17,14 @@ internal static class TerminalProfileFragment
     private const int IconSize = 64;
     private static readonly Color ClaudeOrange = Color.FromRgb(0xD9, 0x77, 0x57);
 
+    /// <summary>Draws the icon here, since WPF renders on the UI thread, and leaves the files to a background task.</summary>
     public static void Ensure()
+    {
+        byte[] icon = DrawIcon();
+        _ = Task.Run(() => Write(icon));
+    }
+
+    private static void Write(byte[] icon)
     {
         try
         {
@@ -25,7 +32,6 @@ internal static class TerminalProfileFragment
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Windows Terminal", "Fragments", "TokenMojo");
             Directory.CreateDirectory(folder);
             string iconPath = Path.Combine(folder, "claude.png");
-            byte[] icon = DrawIcon();
             if (!File.Exists(iconPath) || !File.ReadAllBytes(iconPath).AsSpan().SequenceEqual(icon)) File.WriteAllBytes(iconPath, icon);
             string fragmentPath = Path.Combine(folder, "tokenmojo.json");
             string fragment = TerminalProfile.FragmentJson(iconPath);

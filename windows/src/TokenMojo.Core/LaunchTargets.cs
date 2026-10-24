@@ -18,17 +18,18 @@ public static class LaunchTargets
 
     /// <summary>
     /// Where sessions can be started: each running distro with a Claude Code folder, in the order given, then Windows when
-    /// Claude Code is set up there. A distro without one, such as Docker Desktop's, has nothing to start.
+    /// Claude Code is set up there. A distro without one, such as Docker Desktop's, has nothing to start. A distro named
+    /// Windows is left out, since its name is the native target's.
     /// </summary>
     public static IReadOnlyList<string> Targets(IReadOnlyList<string> running, IEnumerable<ClaudeSource> sources, bool windowsHasClaude)
     {
         HashSet<string> withClaude = sources.Select(source => source.Distro).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
-        List<string> targets = running.Where(withClaude.Contains).ToList();
+        List<string> targets = running.Where(distro => withClaude.Contains(distro) && !IsWindows(distro)).ToList();
         if (windowsHasClaude) targets.Add(Windows);
         return targets;
     }
 
-    public static bool IsWindows(string target) => target == Windows;
+    public static bool IsWindows(string target) => string.Equals(target, Windows, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The configured target when it is available, else the first one; null when there is none.</summary>
     public static string? ChooseDistro(string? configured, IReadOnlyList<string> targets) =>
@@ -37,11 +38,12 @@ public static class LaunchTargets
 
     /// <summary>Why a session cannot be started or resumed on Windows itself; null when it can.</summary>
     /// <param name="bash">Git's bash.exe, or null when it was not found.</param>
-    /// <param name="tm">The tm in the user profile.</param>
+    /// <param name="tm">The tm in Git Bash's home.</param>
+    /// <param name="home">Git Bash's home (<see cref="GitBash.Home"/>).</param>
     public static string? NativeProblem(string? bash, TmState tm, string home)
     {
         if (bash is null) return NoGitBashText;
-        string path = $@"{home.TrimEnd('\\')}\.local\bin\tm";
+        string path = TmInstall.LocalPath(home);
         return tm switch
         {
             TmState.Ours => null,

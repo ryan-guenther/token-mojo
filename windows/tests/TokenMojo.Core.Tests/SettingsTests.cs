@@ -118,7 +118,8 @@ public sealed class SettingsTests : IDisposable
     {
         // Arrange
         string path = _temp.Write("settings.json", """
-            {"distro": "Debian", "defaultFolder": "~/my-app", "repoRoots": ["~", "/srv/code"], "linearTeams": {"ENG": "~/my-app", "OPS2": "/srv/ops"}}
+            {"distro": "Debian", "defaultFolder": "~/my-app", "repoRoots": ["~", "/srv/code"],
+             "linearTeams": {"ENG": "~/my-app", "OPS2": "/srv/ops", "WEB": "C:\\code\\web", "DOC": "~\\docs"}}
             """, DateTimeOffset.UtcNow);
 
         // Act
@@ -130,6 +131,8 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(["~", "/srv/code"], settings.RepoRoots);
         Assert.Equal("~/my-app", settings.LinearTeams["ENG"]);
         Assert.Equal("/srv/ops", settings.LinearTeams["OPS2"]);
+        Assert.Equal(@"C:\code\web", settings.LinearTeams["WEB"]);
+        Assert.Equal(@"~\docs", settings.LinearTeams["DOC"]);
     }
 
     [Fact]

@@ -22,15 +22,4 @@ public static class TerminalProfile
             new { guid = Guid, name = Name, icon = iconPath, hidden = true },
         },
     }, Options);
-
-    /// <summary>
-    /// Variables Claude Code sets for the processes it starts. wt.exe gives a new window the environment of whoever ran it,
-    /// so a TokenMojo started from inside a Claude Code session would pass them on, and the new session would take itself
-    /// for that session's child: among other things it stops saving its transcript, and cannot be resumed.
-    /// </summary>
-    public static readonly IReadOnlyList<string> ClaudeSessionVariables =
-    [
-        "CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
-        "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
-    ];
 }

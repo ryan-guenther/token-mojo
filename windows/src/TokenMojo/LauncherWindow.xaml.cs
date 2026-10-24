@@ -33,8 +33,6 @@ public partial class LauncherWindow : Window
     private IReadOnlyList<RepoInfo> _repos = [];
     // A WSL distro, or LaunchTargets.Windows for Claude Code on Windows itself.
     private string? _distro;
-    // Git Bash, for a Windows target whose check passed.
-    private string? _bash;
     private string? _user;
     private string? _home;
     // Why the launch user is not the distro's default one; shown beside the link hint.
@@ -134,7 +132,6 @@ public partial class LauncherWindow : Window
         _home = null;
         _userNote = null;
         _userProblem = null;
-        _bash = null;
         _choosing = true;
         UpdateStartEnabled();
         if (LaunchTargets.IsWindows(distro))
@@ -161,9 +158,8 @@ public partial class LauncherWindow : Window
         HideError();
         ShowFolders(Folders());
         ApplyHint();
-        (string? bash, string? problem) = await Task.Run(SessionControl.NativeCheck);
+        (_, string? problem) = await Task.Run(SessionControl.NativeCheck);
         if (_closed || generation != _generation) return;
-        _bash = bash;
         _userProblem = problem;
         if (problem is not null) ShowError(problem);
         _choosing = false;
@@ -192,6 +188,9 @@ public partial class LauncherWindow : Window
     private string DefaultFolder => OnWindows ? _settings!.WindowsDefaultFolder : _settings!.DefaultFolder;
 
     private bool IsValidFolder(string folder) => OnWindows ? WindowsFolder.IsValid(folder) : LinuxFolder.IsValid(folder);
+
+    // ~ and ~/x are WSL's in a setting both targets read, so Windows takes only a folder that cannot be a Linux one.
+    private bool IsHintFolder(string folder) => OnWindows ? WindowsFolder.IsWindowsOnly(folder) : LinuxFolder.IsValid(folder);
 
     private string Abbreviate(string folder) =>
         OnWindows ? WindowsFolder.Abbreviate(folder, _home!) : LinuxFolder.Abbreviate(folder, _home);
@@ -252,9 +251,9 @@ public partial class LauncherWindow : Window
         HintText.Text = string.Join("\n", lines);
         HintText.Visibility = lines.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _applying = true;
-        // A Linear team's folder is a Linux path, which a session on Windows cannot start in.
+        // A Linear team's folder may be meant for WSL or for Windows; each target takes only its own kind.
         if (!_folderChosen)
-            FolderBox.Text = hint.Folder is { } folder && IsValidFolder(folder) ? Abbreviate(folder) : DefaultFolder;
+            FolderBox.Text = hint.Folder is { } folder && IsHintFolder(folder) ? Abbreviate(folder) : DefaultFolder;
         if (!_worktreeChosen)
         {
             WorktreeCheck.IsChecked = hint.UseWorktree;
@@ -349,7 +348,7 @@ public partial class LauncherWindow : Window
         }
     }
 
-    // Claude Code on Windows itself: the prompt file goes straight into the profile and Git Bash runs tm.
+    // Claude Code on Windows itself: the prompt file goes straight into Git Bash's home and Git Bash runs tm.
     private static string? TryLaunchNative(string folder, string? worktree, string prompt)
     {
         try
@@ -361,7 +360,7 @@ public partial class LauncherWindow : Window
             string start = WindowsFolder.Expand(folder, home);
             if (!Directory.Exists(start)) return $"The folder does not exist: {folder}";
             LaunchRequest request = new(LaunchTargets.Windows, "", start, worktree, prompt, home);
-            SessionLauncher.LaunchNative(request, bash!, new LocalPromptHandoff(home), TerminalProcess.Start);
+            SessionLauncher.LaunchNative(request, bash!, new LocalPromptHandoff(SessionControl.GitBashHome), TerminalProcess.Start);
             return null;
         }
         catch (Exception e) when (e is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)

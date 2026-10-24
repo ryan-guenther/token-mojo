@@ -8,22 +8,17 @@ public sealed class TerminalProfileTests
     [Fact]
     public void FragmentJson_IsOneHiddenProfileWithTheNameLaunchesUseAndTheIcon()
     {
+        // Arrange
+        const string icon = NativePaths.Home + @"\claude.png";
+
         // Act
-        using JsonDocument fragment = JsonDocument.Parse(TerminalProfile.FragmentJson(@"C:\Users\Ann Lee\claude.png"));
+        using JsonDocument fragment = JsonDocument.Parse(TerminalProfile.FragmentJson(icon));
 
         // Assert
         JsonElement profile = Assert.Single(fragment.RootElement.GetProperty("profiles").EnumerateArray());
         Assert.Equal(TerminalProfile.Name, profile.GetProperty("name").GetString());
-        Assert.Equal(@"C:\Users\Ann Lee\claude.png", profile.GetProperty("icon").GetString());
+        Assert.Equal(icon, profile.GetProperty("icon").GetString());
         Assert.True(profile.GetProperty("hidden").GetBoolean());
         Assert.Matches(@"\A\{[0-9a-f-]{36}\}\z", profile.GetProperty("guid").GetString());
-    }
-
-    [Fact]
-    public void ClaudeSessionVariables_KeepTheUsersOwnClaudeCodeSettings()
-    {
-        // Act / Assert
-        Assert.Contains("CLAUDE_CODE_CHILD_SESSION", TerminalProfile.ClaudeSessionVariables);
-        Assert.DoesNotContain("CLAUDE_CODE_GIT_BASH_PATH", TerminalProfile.ClaudeSessionVariables);
     }
 }

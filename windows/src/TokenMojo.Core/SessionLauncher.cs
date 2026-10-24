@@ -54,7 +54,7 @@ public static class SessionLauncher
         {
             handoff.Deposit(request.Distro, request.User, id, request.Prompt);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             TryDiscard(handoff, request, id);
             throw;
@@ -68,7 +68,7 @@ public static class SessionLauncher
         {
             handoff.Discard(request.Distro, request.User, id);
         }
-        catch (IOException e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Trace.TraceWarning("TokenMojo: cannot remove prompt file {0} in {1}: {2}", id, request.Distro, e.Message);
         }

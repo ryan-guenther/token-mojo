@@ -5,7 +5,6 @@ namespace TokenMojo.Core.Tests;
 public sealed class LaunchCommandTests
 {
     private static readonly Guid PromptId = Guid.Parse("3636af4c-8a5c-4e7f-a26c-739e5f93af06");
-    private const string Bash = @"C:\Program Files\Git\bin\bash.exe";
 
     [Fact]
     public void Build_WorktreeAndPrompt_OpensANewWindowRunningTmWithBoth()
@@ -27,13 +26,13 @@ public sealed class LaunchCommandTests
     public void BuildNative_WorktreeAndPrompt_OpensANewWindowInTheFolderWithGitBashRunningTm()
     {
         // Act
-        LaunchCommand command = LaunchCommand.BuildNative(Bash, @"C:\code\my app", "eng-42", PromptId);
+        LaunchCommand command = LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code\my app", "eng-42", PromptId);
 
         // Assert
         Assert.Equal("wt.exe", command.FileName);
         Assert.Equal(
             [
-                "-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", Bash, "-c",
+                "-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", NativePaths.Bash, "-c",
                 $"exec ~/.local/bin/tm --wt eng-42 --prompt-file ~/.claude/cctokmon-launch/{PromptId}.txt",
             ],
             command.Arguments);
@@ -43,7 +42,7 @@ public sealed class LaunchCommandTests
     public void BuildNative_NoWorktreeAndNoPrompt_RunsTmThroughExecSoTheCommandHasASpaceAndIsQuoted()
     {
         // Act
-        LaunchCommand command = LaunchCommand.BuildNative(Bash, @"C:\code", null, null);
+        LaunchCommand command = LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code", null, null);
 
         // Assert
         Assert.Equal("exec ~/.local/bin/tm", command.Arguments[^1]);
@@ -53,7 +52,7 @@ public sealed class LaunchCommandTests
     public void BuildNative_SemicolonInTheFolder_IsEscapedForWindowsTerminal()
     {
         // Act
-        LaunchCommand command = LaunchCommand.BuildNative(Bash, @"C:\code\a;b", null, null);
+        LaunchCommand command = LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code\a;b", null, null);
 
         // Assert
         Assert.Equal(@"C:\code\a\;b", command.Arguments[5]);
@@ -67,14 +66,14 @@ public sealed class LaunchCommandTests
     public void BuildNative_FolderIsNotAFullWindowsPath_IsRefused(string folder)
     {
         // Act / Assert
-        Assert.Throws<ArgumentException>(() => LaunchCommand.BuildNative(Bash, folder, null, null));
+        Assert.Throws<ArgumentException>(() => LaunchCommand.BuildNative(NativePaths.Bash,folder, null, null));
     }
 
     [Fact]
     public void BuildNative_InvalidWorktreeName_IsRefused()
     {
         // Act / Assert
-        Assert.Throws<ArgumentException>(() => LaunchCommand.BuildNative(Bash, @"C:\code", "a b", null));
+        Assert.Throws<ArgumentException>(() => LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code", "a b", null));
     }
 
     [Fact]

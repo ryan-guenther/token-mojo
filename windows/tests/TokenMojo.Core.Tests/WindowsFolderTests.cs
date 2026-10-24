@@ -4,8 +4,6 @@ namespace TokenMojo.Core.Tests;
 
 public sealed class WindowsFolderTests
 {
-    private const string Home = @"C:\Users\Ann Lee";
-
     [Theory]
     [InlineData("~")]
     [InlineData(@"~\my app")]
@@ -25,6 +23,8 @@ public sealed class WindowsFolderTests
     [InlineData("")]
     [InlineData("code")]
     [InlineData(@"code\app")]
+    [InlineData(@"\\server")]
+    [InlineData(@"\\server\")]
     [InlineData("C:code")]
     [InlineData(@"\code")]
     [InlineData("/home/alice")]
@@ -38,27 +38,41 @@ public sealed class WindowsFolderTests
     }
 
     [Theory]
-    [InlineData("~", Home)]
-    [InlineData(@"~\my app", @"C:\Users\Ann Lee\my app")]
-    [InlineData("~/a/b", @"C:\Users\Ann Lee\a\b")]
+    [InlineData(@"C:\code", true)]
+    [InlineData(@"~\code", true)]
+    [InlineData(@"\\server\share", true)]
+    [InlineData("~", false)]
+    [InlineData("~/code", false)]
+    [InlineData("/srv/code", false)]
+    [InlineData("code", false)]
+    public void IsWindowsOnly_IsAWindowsFolderThatCannotBeReadAsALinuxOne(string folder, bool expected)
+    {
+        // Act / Assert
+        Assert.Equal(expected, WindowsFolder.IsWindowsOnly(folder));
+    }
+
+    [Theory]
+    [InlineData("~", NativePaths.Home)]
+    [InlineData(@"~\my app", NativePaths.Home + @"\my app")]
+    [InlineData("~/a/b", NativePaths.Home + @"\a\b")]
     [InlineData(@"D:\code", @"D:\code")]
     public void Expand_TildeIsTheProfile(string folder, string expected)
     {
         // Act / Assert
-        Assert.Equal(expected, WindowsFolder.Expand(folder, Home));
+        Assert.Equal(expected, WindowsFolder.Expand(folder, NativePaths.Home));
     }
 
     [Theory]
-    [InlineData(Home, "~")]
-    [InlineData(@"C:\Users\Ann Lee\", "~")]
-    [InlineData(@"C:\Users\Ann Lee\my app", @"~\my app")]
-    [InlineData(@"c:\users\ann lee\code", @"~\code")]
-    [InlineData(@"C:\Users\Ann Leeds\code", @"C:\Users\Ann Leeds\code")]
+    [InlineData(NativePaths.Home, "~")]
+    [InlineData(NativePaths.Home + @"\", "~")]
+    [InlineData(NativePaths.Home + @"\my app", @"~\my app")]
+    [InlineData(@"c:\users\alice smith\code", @"~\code")]
+    [InlineData(NativePaths.Home + @"son\code", NativePaths.Home + @"son\code")]
     [InlineData(@"D:\code", @"D:\code")]
     public void Abbreviate_FolderInTheProfile_IsWrittenWithATilde(string folder, string expected)
     {
         // Act / Assert
-        Assert.Equal(expected, WindowsFolder.Abbreviate(folder, Home));
+        Assert.Equal(expected, WindowsFolder.Abbreviate(folder, NativePaths.Home));
     }
 
     [Theory]

@@ -35,12 +35,12 @@ public sealed class SessionLauncherTests
         TerminalCommand? started = null;
 
         // Act
-        SessionLauncher.LaunchNative(request, @"C:\Git\bin\bash.exe", handoff, command => started = command);
+        SessionLauncher.LaunchNative(request, NativePaths.Bash, handoff, command => started = command);
 
         // Assert
         Guid id = handoff.Deposited.Single().Id;
         Assert.Equal(
-            ["-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", @"C:\Git\bin\bash.exe", "-c",
+            ["-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", NativePaths.Bash, "-c",
                 $"exec ~/.local/bin/tm --wt eng-42 --prompt-file ~/.claude/cctokmon-launch/{id}.txt"],
             started!.Arguments);
         Assert.Equal("fix the build; then test", handoff.Deposited.Single().Prompt);
@@ -55,7 +55,7 @@ public sealed class SessionLauncherTests
 
         // Act
         Assert.Throws<Win32Exception>(() =>
-            SessionLauncher.LaunchNative(request, @"C:\Git\bin\bash.exe", handoff, _ => throw new Win32Exception("no wt.exe")));
+            SessionLauncher.LaunchNative(request, NativePaths.Bash, handoff, _ => throw new Win32Exception("no wt.exe")));
 
         // Assert
         Assert.Equal([handoff.Deposited.Single().Id], handoff.Discarded.Select(discard => discard.Id));
@@ -69,7 +69,7 @@ public sealed class SessionLauncherTests
         FakeHandoff handoff = new();
 
         // Act
-        Assert.Throws<ArgumentException>(() => SessionLauncher.LaunchNative(request, @"C:\Git\bin\bash.exe", handoff, _ => { }));
+        Assert.Throws<ArgumentException>(() => SessionLauncher.LaunchNative(request, NativePaths.Bash, handoff, _ => { }));
 
         // Assert
         Assert.Empty(handoff.Deposited);
@@ -154,12 +154,14 @@ public sealed class SessionLauncherTests
         Assert.Equal([(handoff.Deposited.Single().Id, "alice")], handoff.Discarded.Select(discard => (discard.Id, discard.User)));
     }
 
-    [Fact]
-    public void Launch_TerminalFailsAndTheDiscardFails_RethrowsTheTerminalFailure()
+    [Theory]
+    [InlineData(typeof(IOException))]
+    [InlineData(typeof(UnauthorizedAccessException))]
+    public void Launch_TerminalFailsAndTheDiscardFails_RethrowsTheTerminalFailure(Type discardError)
     {
         // Arrange
         LaunchRequest request = new("Ubuntu", "alice", "~", null, "hello");
-        FakeHandoff handoff = new() { DiscardError = new IOException("wsl.exe did not answer") };
+        FakeHandoff handoff = new() { DiscardError = (Exception)Activator.CreateInstance(discardError, "cannot remove the file")! };
 
         // Act
         Win32Exception error = Assert.Throws<Win32Exception>(
@@ -190,7 +192,7 @@ public sealed class SessionLauncherTests
         public List<(string Distro, string User, Guid Id, string Prompt)> Deposited { get; } = new();
         public List<(string Distro, string User, Guid Id)> Discarded { get; } = new();
         public IOException? DepositError { get; init; }
-        public IOException? DiscardError { get; init; }
+        public Exception? DiscardError { get; init; }
 
         public void Deposit(string distro, string user, Guid id, string prompt)
         {

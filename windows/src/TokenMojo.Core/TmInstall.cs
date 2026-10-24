@@ -46,13 +46,16 @@ public static class TmInstall
         _ => new TmCheck(TmState.CouldNotRun, exitCode),
     };
 
+    /// <summary>Where install.sh puts tm under Git Bash's home.</summary>
+    public static string LocalPath(string gitBashHome) => Path.Combine(gitBashHome, ".local", "bin", "tm");
+
     /// <summary>
-    /// The tm in a Windows user profile, which Git Bash runs. install.sh writes a launcher script there rather than a
+    /// The tm in Git Bash's home, which Git Bash runs. install.sh writes a launcher script there rather than a
     /// symlink, so it is read directly: the first 4 KB, which hold the markers.
     /// </summary>
-    public static TmState InspectLocal(string windowsHome)
+    public static TmState InspectLocal(string gitBashHome)
     {
-        string path = Path.Combine(windowsHome, ".local", "bin", "tm");
+        string path = LocalPath(gitBashHome);
         try
         {
             if (Directory.Exists(path)) return TmState.Foreign;

@@ -63,6 +63,16 @@ public sealed class LaunchTargetsTests
     }
 
     [Fact]
+    public void Targets_DistroNamedWindows_IsLeftOutSoItIsNotTakenForTheNativeTarget()
+    {
+        // Act
+        IReadOnlyList<string> targets = LaunchTargets.Targets(["windows", "Ubuntu"], [Source("alice", distro: "windows"), Source("bob")], windowsHasClaude: true);
+
+        // Assert
+        Assert.Equal(["Ubuntu", LaunchTargets.Windows], targets);
+    }
+
+    [Fact]
     public void Targets_NoClaudeOnWindows_LeavesWindowsOut()
     {
         // Act
@@ -76,14 +86,14 @@ public sealed class LaunchTargetsTests
     public void NativeProblem_GitBashAndOurTm_IsNone()
     {
         // Act / Assert
-        Assert.Null(LaunchTargets.NativeProblem(@"C:\Git\bin\bash.exe", TmState.Ours, @"C:\Users\ann"));
+        Assert.Null(LaunchTargets.NativeProblem(NativePaths.Bash, TmState.Ours, NativePaths.Home));
     }
 
     [Fact]
     public void NativeProblem_NoGitBash_SaysSoWhateverTheTm()
     {
         // Act
-        string? problem = LaunchTargets.NativeProblem(null, TmState.Ours, @"C:\Users\ann");
+        string? problem = LaunchTargets.NativeProblem(null, TmState.Ours, NativePaths.Home);
 
         // Assert
         Assert.Contains("Git Bash", problem);
@@ -96,11 +106,11 @@ public sealed class LaunchTargetsTests
     public void NativeProblem_TmNotOurs_NamesItsPath(TmState state, string expected)
     {
         // Act
-        string? problem = LaunchTargets.NativeProblem(@"C:\Git\bin\bash.exe", state, @"C:\Users\ann\");
+        string? problem = LaunchTargets.NativeProblem(NativePaths.Bash, state, NativePaths.Home + @"\");
 
         // Assert
         Assert.Contains(expected, problem);
-        Assert.Contains(@"C:\Users\ann\.local\bin\tm", problem);
+        Assert.Contains(TmInstall.LocalPath(NativePaths.Home + @"\"), problem);
     }
 
     [Fact]

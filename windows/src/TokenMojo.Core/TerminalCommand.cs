@@ -3,6 +3,18 @@ namespace TokenMojo.Core;
 /// <summary>A wt.exe invocation that opens a new Windows Terminal window running a command in a WSL distro or in Git Bash.</summary>
 public record TerminalCommand(string FileName, IReadOnlyList<string> Arguments)
 {
+    /// <summary>
+    /// Variables Claude Code sets for the processes it starts, removed from wt.exe's environment. wt.exe gives a new window
+    /// the environment of whoever ran it, so a TokenMojo started from inside a Claude Code session would pass them on, and
+    /// the new session would take itself for that session's child: among other things it stops saving its transcript, and
+    /// cannot be resumed. Listed one by one, so the user's own settings, such as CLAUDE_CODE_GIT_BASH_PATH, are kept.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ClaudeSessionVariables =
+    [
+        "CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+    ];
+
     /// <param name="bash">Git's bin\bash.exe, which puts Git's tools on PATH.</param>
     /// <param name="folder">The full Windows path the window starts in.</param>
     /// <param name="shellCommand">Run by a plain (not login) shell, since a login shell's profile changes to the home folder. One wt.exe argument, so no semicolons.</param>

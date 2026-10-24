@@ -11,7 +11,7 @@ internal static class TerminalProcess
         ProcessStartInfo startInfo = new(command.FileName) { UseShellExecute = false };
         foreach (string argument in command.Arguments)
             startInfo.ArgumentList.Add(argument);
-        foreach (string variable in TerminalProfile.ClaudeSessionVariables)
+        foreach (string variable in TerminalCommand.ClaudeSessionVariables)
             startInfo.Environment.Remove(variable);
         Process.Start(startInfo)?.Dispose();
     }

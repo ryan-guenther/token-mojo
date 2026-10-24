@@ -117,14 +117,14 @@ public sealed class FolderListTests
         // Arrange
         SessionSnapshot[] sessions =
         [
-            Session("a", @"C:\Users\ann\older", minutesAgo: 30, distro: null),
+            Session("a", NativePaths.Home + @"\older", minutesAgo: 30, distro: null),
             Session("b", @"D:\code\app\.claude\worktrees\pr-12", minutesAgo: 5, distro: null),
             Session("c", "/home/alice/linux", minutesAgo: 1),
         ];
         RepoInfo[] repos = [new(@"D:\code\widgets", []), new(@"D:\code\APP", [])];
 
         // Act
-        IReadOnlyList<string> folders = FolderList.BuildWindows("~", @"C:\Users\ann", sessions, repos);
+        IReadOnlyList<string> folders = FolderList.BuildWindows("~", NativePaths.Home, sessions, repos);
 
         // Assert
         Assert.Equal(["~", @"D:\code\app", @"~\older", @"D:\code\widgets"], folders);

@@ -64,7 +64,10 @@ public sealed record Settings
         foreach ((string team, string folder) in LinearTeams)
         {
             if (!TeamKey.IsMatch(team)) throw new JsonException($"linearTeams key '{team}' must be a team key such as ENG");
-            RequireFolder($"linearTeams.{team}", folder);
+            // A team is worked on in WSL or on Windows, so either kind of folder will do.
+            if (!LinuxFolder.IsValid(folder) && !WindowsFolder.IsWindowsOnly(folder))
+                throw new JsonException(
+                    $"linearTeams.{team} must be a folder starting with ~/ or /, just ~, or a Windows path such as C:\\code or ~\\code, not '{folder}'");
         }
     }
 

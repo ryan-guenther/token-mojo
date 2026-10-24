@@ -51,14 +51,17 @@ internal static class SessionControl
         }
     }
 
-    /// <summary>The user profile, home of the Windows source's ~/.claude and of Git Bash's ~.</summary>
+    /// <summary>The user profile, home of the Windows source's ~/.claude, and what a folder's ~ means in the launcher.</summary>
     public static string WindowsHome { get; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>Git Bash's ~, where install.sh put tm and where tm reads a prompt file; usually the profile, but HOME may move it.</summary>
+    public static string GitBashHome { get; } = GitBash.Home(Environment.GetEnvironmentVariable, WindowsHome);
 
     /// <summary>Git Bash, and why a session cannot run on Windows itself (null when it can). Reads the disk, so off the UI thread.</summary>
     internal static (string? Bash, string? Problem) NativeCheck()
     {
         string? bash = GitBash.Find(Environment.GetEnvironmentVariable, File.Exists);
-        return (bash, LaunchTargets.NativeProblem(bash, TmInstall.InspectLocal(WindowsHome), WindowsHome));
+        return (bash, LaunchTargets.NativeProblem(bash, TmInstall.InspectLocal(GitBashHome), GitBashHome));
     }
 
     public static bool HasWindow(string sessionId) => FindWindow(sessionId) is not null;

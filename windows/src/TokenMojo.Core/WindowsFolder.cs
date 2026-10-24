@@ -19,6 +19,12 @@ public static partial class WindowsFolder
         // A quote would end the argument wt.exe reads the folder from.
         && !folder.Any(character => char.IsControl(character) || character is '"');
 
+    /// <summary>
+    /// A Windows folder that cannot also be read as a Linux one: a drive or UNC path, or ~\x. Not ~, ~/x or /x, which a
+    /// setting shared between WSL and Windows, such as a Linear team's folder, means for WSL.
+    /// </summary>
+    public static bool IsWindowsOnly(string? folder) => IsValid(folder) && !LinuxFolder.IsValid(folder);
+
     /// <summary>The full path of a folder; a tilde is the user profile.</summary>
     public static string Expand(string folder, string home)
     {

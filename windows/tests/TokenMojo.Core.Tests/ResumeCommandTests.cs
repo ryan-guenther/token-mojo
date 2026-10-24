@@ -6,8 +6,6 @@ public sealed class ResumeCommandTests
 {
     private const string SessionId = "3636af4c-8a5c-4e7f-a26c-739e5f93af06";
     private const string Share = @"\\wsl.localhost";
-    private const string Bash = @"C:\Program Files\Git\bin\bash.exe";
-    private const string WindowsHome = @"C:\Users\Ann Lee";
 
     [Fact]
     public void Build_FolderExists_OpensANewWindowInThatFolderResumingTheSession()
@@ -29,11 +27,13 @@ public sealed class ResumeCommandTests
     public void BuildNative_FolderExists_OpensANewWindowThereWithGitBashResumingTheSession()
     {
         // Act
-        ResumeCommand command = ResumeCommand.BuildNative(Bash, SessionId, @"C:\code\my app", _ => true, WindowsHome);
+        ResumeCommand command = ResumeCommand.BuildNative(NativePaths.Bash, SessionId, @"C:\code\my app", _ => true, NativePaths.Home);
 
         // Assert
         Assert.Equal("wt.exe", command.FileName);
-        Assert.Equal(["-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", Bash, "-c", $"exec ~/.local/bin/tm --resume {SessionId}"], command.Arguments);
+        Assert.Equal(
+            ["-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", NativePaths.Bash, "-c", $"exec ~/.local/bin/tm --resume {SessionId}"],
+            command.Arguments);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class ResumeCommandTests
     {
         // Act
         ResumeCommand command = ResumeCommand.BuildNative(
-            Bash, SessionId, @"C:\code\app\.claude\worktrees\pr-12", path => path == @"C:\code\app", WindowsHome);
+            NativePaths.Bash, SessionId, @"C:\code\app\.claude\worktrees\pr-12", path => path == @"C:\code\app", NativePaths.Home);
 
         // Assert
         Assert.Equal(@"C:\code\app", command.Arguments[5]);
@@ -55,17 +55,17 @@ public sealed class ResumeCommandTests
     public void BuildNative_NoFolderLeft_OpensInTheProfile(string? cwd)
     {
         // Act
-        ResumeCommand command = ResumeCommand.BuildNative(Bash, SessionId, cwd, path => path == "/home/alice/linux-path", WindowsHome);
+        ResumeCommand command = ResumeCommand.BuildNative(NativePaths.Bash, SessionId, cwd, path => path == "/home/alice/linux-path", NativePaths.Home);
 
         // Assert
-        Assert.Equal(WindowsHome, command.Arguments[5]);
+        Assert.Equal(NativePaths.Home, command.Arguments[5]);
     }
 
     [Fact]
     public void BuildNative_NotASessionId_IsRefused()
     {
         // Act / Assert
-        Assert.Throws<ArgumentException>(() => ResumeCommand.BuildNative(Bash, "abc; rm -rf ~", @"C:\code", _ => true, WindowsHome));
+        Assert.Throws<ArgumentException>(() => ResumeCommand.BuildNative(NativePaths.Bash, "abc; rm -rf ~", @"C:\code", _ => true, NativePaths.Home));
     }
 
     [Fact]

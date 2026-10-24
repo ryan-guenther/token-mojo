@@ -62,9 +62,9 @@ internal sealed class TrayController : IDisposable
         };
         _notifyIcon.BalloonTipClicked += async (_, _) => await OnBalloonClickedAsync();
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
-        TerminalProfileFragment.Ensure();
         Render(null, DateTimeOffset.Now);
         _notifyIcon.Visible = true;
+        TerminalProfileFragment.Ensure();
 
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();
