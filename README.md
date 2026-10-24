@@ -84,7 +84,7 @@ sudo dnf install jq        # Fedora/RHEL
 ```bash
 winget install --exact --id jqlang.jq
 ```
-Restart Claude Code afterwards so it picks up jq on its PATH. If you run Claude Code inside WSL instead, follow the Linux steps inside WSL.
+A Claude Code or terminal that was already open does not have jq on its PATH yet; the installer, the bridge and the hooks look in winget's folder for it, so nothing needs restarting. If you run Claude Code inside WSL instead, follow the Linux steps inside WSL.
 
 ---
 
@@ -227,7 +227,7 @@ tm --resume <session-id>             # resume a session, tagging the tab again
 tm -- -starts-with-a-dash            # everything after -- is the prompt
 ```
 
-`--wt NAME` accepts letters, digits, `.`, `_` and `-`. `tm` sets `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, since Claude Code would otherwise rewrite the tab title; the cost is that Claude's own title updates and terminal status reports are off in that session.
+It works in Git Bash on Windows too, which has neither `uuidgen` nor `/proc/sys/kernel/random/uuid`; there it makes the session id from `/dev/urandom`. `--wt NAME` accepts letters, digits, `.`, `_` and `-`. `tm` sets `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, since Claude Code would otherwise rewrite the tab title; the cost is that Claude's own title updates and terminal status reports are off in that session.
 
 ### Worktrees and submodules
 
@@ -320,7 +320,7 @@ Windows hides new tray icons under the **^** arrow beside the clock at first; dr
 - **The icon** is one ring for whichever of the 5-hour limit, 7-day limit and context window is highest, with that percentage inside: green under 50%, orange from 50%, red from 80%. `!` means 100% or more, and `–` means there is no data yet. A limit whose window has reset shows "Reset — awaiting update" in the dashboard until your next Claude Code interaction refreshes it.
 - **Hover** for all three gauges plus the session cost.
 - **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours. In that list the highlighted row is the current session, and the dot shows its [status](#session-status): red needs input, teal ready for your next prompt, green working, grey ended. Sessions that never reported a status show green if active in the last 10 minutes and grey otherwise. Sessions needing you are listed first.
-- **Click a session row** to bring its terminal window forward. If there is no window, an ended session is resumed in a new Windows Terminal window, and one that still looks like it is running asks first ("Resume in a new terminal anyway?"). **Right-click** a row for Focus, Resume in new terminal, Open folder (in Explorer, through the WSL share) and Copy session ID; items that do not apply are greyed out. After a focus or resume the flyout closes.
+- **Click a session row** to bring its terminal window forward. If there is no window, an ended session is resumed in a new Windows Terminal window, and one that still looks like it is running asks first ("Resume in a new terminal anyway?"). **Right-click** a row for Focus, Resume in new terminal, Open folder (in Explorer, through the WSL share for a WSL session) and Copy session ID; items that do not apply are greyed out. After a focus or resume the flyout closes.
 - **Alerts** appear as a notification when a session needs input, and when a turn that took `longTurnSeconds` or more finishes (30 by default, see [Settings](#settings)). While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts. A notification is skipped when that session's window is already in front, and clicking one brings the session's window forward (or offers to resume it).
 - **New Session…** (the right-click menu, the dashboard menu, or the **+** in the Sessions header) opens the [launcher](#starting-a-session-from-tokenmojo).
 - **Pop Out Window** opens the same dashboard in a window that stays on top; closing it remembers where it was.
@@ -331,21 +331,25 @@ The 5-hour and 7-day rings appear only for Claude Pro and Max subscribers; with 
 Limits of click-to-focus and resume:
 
 - Focus works only for sessions started with `tm` (see [Starting sessions with tm](#starting-sessions-with-tm)), and only while that tab is the active tab in its Windows Terminal window, because the window title is the active tab's.
-- Resume is for WSL sessions. A session from the Windows profile can be focused but not resumed.
-- Resume runs as the Linux account that owns the home folder holding the session's files. TokenMojo asks each running distro who that is (one command per distro, once a minute), so an account whose name differs from its home folder works. If the distro cannot be asked, the answer from an earlier minute is reused; the home folder name is used as the user name only when it has never answered. `tm` must be installed there (`install.sh` in that distro) and must be cctokmon's: a `tm` that `install.sh` left alone because it is not cctokmon's is never run, and resume says so instead.
+- A session that ran on Windows itself is resumed with `tm --resume` run by Git Bash (found through `CLAUDE_CODE_GIT_BASH_PATH`, else a standard Git for Windows install), so `install.sh` must have been run from Git Bash and `tm` must be cctokmon's.
+- A WSL session is resumed as the Linux account that owns the home folder holding the session's files. TokenMojo asks each running distro who that is (one command per distro, once a minute), so an account whose name differs from its home folder works. If the distro cannot be asked, the answer from an earlier minute is reused; the home folder name is used as the user name only when it has never answered. `tm` must be installed there (`install.sh` in that distro) and must be cctokmon's: a `tm` that `install.sh` left alone because it is not cctokmon's is never run, and resume says so instead.
 - If the session's folder (for example a removed worktree) no longer exists, resume starts in the repository root, or in your home folder when that is gone too.
 
 ### Starting a session from TokenMojo
 
-**New Session…** opens a small window that starts Claude Code in a new Windows Terminal window running [`tm`](#starting-sessions-with-tm), so the session is tagged and appears in the list like any other. It is for WSL only. Run `install.sh` in the distro first, and make sure `wt.exe` (Windows Terminal) is installed.
+**New Session…** opens a small window that starts Claude Code in a new Windows Terminal window running [`tm`](#starting-sessions-with-tm), so the session is tagged and appears in the list like any other. It starts sessions in a running WSL distro that has Claude Code set up, or on Windows itself when `install.sh` was run from Git Bash. Run `install.sh` there first, and make sure `wt.exe` (Windows Terminal) is installed.
 
-- **Prompt** is sent to Claude unchanged, quotes, semicolons, `$` and line breaks included. Enter starts the session; Shift+Enter adds a line. Leave it empty to start an idle session. The prompt travels in a temporary file (`~/.claude/cctokmon-launch/<id>.txt`, mode 600) that is created as the Linux user the session runs as, by a `wsl.exe -u` command that reads the prompt from standard input (never from a command line), and that `tm` reads and deletes before anything else can stop it (a file it cannot delete is only a warning); if the terminal cannot be started, the launcher deletes the file itself, and `tm` removes any launch file older than a day on each run.
-- **Folder** is where the session starts. Pick from the list or type a path (`~`, `~/my-app` or `/srv/code`; double quotes and backslashes are not accepted). The list holds `defaultFolder`, then the folders of recent sessions (a worktree is listed as its repository), then the git repositories found directly under each of `repoRoots`. **Browse…** opens a folder dialog at your distro home; only folders inside the distro can be used.
+- **Prompt** is sent to Claude unchanged, quotes, semicolons, `$` and line breaks included. Enter starts the session; Shift+Enter adds a line. Leave it empty to start an idle session. The prompt travels in a temporary file (`~/.claude/cctokmon-launch/<id>.txt`) that `tm` reads and deletes before anything else can stop it (a file it cannot delete is only a warning), so it is never on a command line. In WSL the file is created as the Linux user the session runs as, mode 600, by a `wsl.exe -u` command that reads the prompt from standard input; on Windows TokenMojo writes it into your profile. If the terminal cannot be started, the launcher deletes the file itself, and `tm` removes any launch file older than a day on each run.
+- **Folder** is where the session starts. Pick from the list or type a path: in WSL `~`, `~/my-app` or `/srv/code` (double quotes and backslashes are not accepted); on Windows a full path such as `C:\code\my-app`, or `~`, `~\my-app` for your profile. The list holds the default folder, then the folders of recent sessions (a worktree is listed as its repository), then the git repositories found directly under each repository root (`defaultFolder` and `repoRoots`, or `windowsDefaultFolder` and `windowsRepoRoots` on Windows). **Browse…** opens a folder dialog: at your distro home, where only folders inside the distro can be used, or at the folder in the box on Windows.
 - **Worktree** starts the session in `claude -w NAME`, as described under [Worktrees and submodules](#worktrees-and-submodules). Names take letters, digits, `.`, `_` and `-`.
 - **Links in the prompt** pre-fill the folder and worktree, using the first link found. A Linear issue link (`https://linear.app/<workspace>/issue/ENG-42/...`) suggests the worktree `eng-42` and the folder mapped to `ENG` in `linearTeams`. A GitHub pull request link (`https://github.com/octo/widgets/pull/12`) suggests the worktree `pr-12` and the repository with a remote at `octo/widgets` (https or ssh, with or without `.git`): one whose `origin` matches comes first, otherwise the first with any matching remote, such as a fork whose `upstream` is `octo/widgets`. The worktree box is ticked only when the folder was found too; with a link but no matching folder the name is suggested and the box left unticked. The line under the prompt says what was detected. Anything you set yourself is left alone, and the prompt itself is never changed.
-- **WSL distro** appears only when more than one distro is running.
+- **Run in** picks the WSL distro or Windows, and appears only when there is more than one to choose from. Only running distros with a Claude Code folder are offered, so Docker Desktop's distro is not; Windows comes last. A distro named Windows is not offered, since that name is taken.
 
-The session runs as the distro's default user when that user has a `~/.claude` with a cctokmon `tm`; otherwise as the first user that has both, and the window says so under the prompt. If nobody has a cctokmon `tm` (none installed, or a `tm` that is not cctokmon's), nothing is started and the window says which; if the distro did not answer it says it could not check, and a `tm` that exists but cannot be read, or a check that could not run as that user, is reported as such. Pressing Start asks again when no user was found. While a session is being started, Cancel and closing the window wait for it to finish. Limits: users and their `tm` are read when the window opens, so reopen it after installing or removing `tm`; accounts are found only for homes under `/home` and `/root`; a home shared by two accounts goes to the default user, else the first in the account list. Repositories are listed one level below each root only, and not when `.git` is a file (a worktree or submodule). A repository that cannot be read is skipped. The **+** button is in the Sessions card, which shows once at least one session has been seen; the menu entries are always there.
+On Windows the session runs in Git Bash (found through `CLAUDE_CODE_GIT_BASH_PATH`, else a standard Git for Windows install), which runs your `~/.local/bin/tm` (Git Bash's `~` is `HOME` when that is set to a Windows path, else your profile) in a new Windows Terminal window, in a profile TokenMojo adds for its Claude icon (a [fragment](https://learn.microsoft.com/windows/terminal/json-fragment-extensions) in `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\TokenMojo`; Windows Terminal reads it the next time it starts, and until then sessions open with the default profile's icon). If Git Bash or a cctokmon `tm` is missing, nothing is started and the window says which.
+
+A session TokenMojo starts or resumes, in WSL or on Windows, gets none of the environment variables Claude Code sets for its own child processes, even when TokenMojo itself was started from inside a Claude Code session.
+
+In WSL the session runs as the distro's default user when that user has a `~/.claude` with a cctokmon `tm`; otherwise as the first user that has both, and the window says so under the prompt. If nobody has a cctokmon `tm` (none installed, or a `tm` that is not cctokmon's), nothing is started and the window says which; if the distro did not answer it says it could not check, and a `tm` that exists but cannot be read, or a check that could not run as that user, is reported as such. Pressing Start asks again when no user was found. While a session is being started, Cancel and closing the window wait for it to finish. Limits: users and their `tm` are read when the window opens, so reopen it after installing or removing `tm`; accounts are found only for homes under `/home` and `/root`; a home shared by two accounts goes to the default user, else the first in the account list. Repositories are listed one level below each root only, and not when `.git` is a file (a worktree or submodule). A repository that cannot be read is skipped. The **+** button is in the Sessions card, which shows once at least one session has been seen; the menu entries are always there.
 
 ### Settings
 
@@ -357,6 +361,8 @@ The session runs as the distro's default user when that user has a `~/.claude` w
   "distro": null,
   "defaultFolder": "~",
   "repoRoots": ["~"],
+  "windowsDefaultFolder": "~",
+  "windowsRepoRoots": ["~"],
   "linearTeams": {}
 }
 ```
@@ -364,17 +370,19 @@ The session runs as the distro's default user when that user has a `~/.claude` w
 | Setting | Meaning |
 |---|---|
 | `longTurnSeconds` | How long a turn must take before finishing it raises an alert. |
-| `distro` | The WSL distro the launcher uses. `null` uses the first running one; a distro that is not running is ignored. |
-| `defaultFolder` | The launcher's first folder. `~`, `~/...` or an absolute path. |
-| `repoRoots` | Folders whose git repositories the launcher offers, same form as `defaultFolder`. |
-| `linearTeams` | Linear team key to the folder its issues are worked in, for example `{"ENG": "~/my-app"}`. Keys are upper case letters and digits, starting with a letter. |
+| `distro` | The WSL distro the launcher uses, or `"Windows"` for Claude Code on Windows itself. `null` uses the first running distro with Claude Code, else Windows; one that is not available is ignored. |
+| `defaultFolder` | The launcher's first folder in WSL. `~`, `~/...` or an absolute path. |
+| `repoRoots` | Folders whose git repositories the launcher offers in WSL, same form as `defaultFolder`. |
+| `windowsDefaultFolder` | The launcher's first folder on Windows. A full path such as `C:\\code` (backslashes doubled in JSON), or `~`, `~\\...` for your profile. |
+| `windowsRepoRoots` | Folders whose git repositories the launcher offers on Windows, same form as `windowsDefaultFolder`. |
+| `linearTeams` | Linear team key to the folder its issues are worked in, for example `{"ENG": "~/my-app"}`. Keys are upper case letters and digits, starting with a letter. A folder is a WSL one (`~`, `~/...` or `/...`) or a Windows one (`C:\\...` or `~\\...`), and the launcher uses it only when starting a session in that kind of place. |
 
 The file is read on every refresh. If it is not valid JSON or has a bad value, the dashboard shows the error instead of falling back to defaults.
 
 ### Troubleshooting
 
 - **"No bridge data yet"** — the bridge has not written anything. Check that `statusLine` is set in `~/.claude/settings.json` (re-run `install.sh` if not), then send any message in Claude Code; the dashboard updates within 5 seconds. For WSL, the distro must be running, and a newly started distro is picked up within a minute.
-- **Native Windows only:** Claude Code needs Git Bash to run the bridge, and needs restarting after jq is installed so it finds jq.
+- **Native Windows only:** Claude Code needs Git Bash to run the bridge. The bridge and hooks also look for jq in winget's folder, so a Claude Code started before jq was installed still finds it.
 
 ---
 

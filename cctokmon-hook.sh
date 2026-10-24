@@ -22,6 +22,12 @@ exec >/dev/null
 
 SESSIONS_DIR="${CCTOKMON_SESSIONS_DIR:-$HOME/.claude/cctokmon-sessions}"
 
+# winget installs jq into its links dir, which a Claude Code started before the install
+# does not have on PATH yet
+if ! command -v jq >/dev/null 2>&1 && [[ -n "${LOCALAPPDATA:-}" ]] && command -v cygpath >/dev/null 2>&1; then
+    PATH="$PATH:$(cygpath -u "$LOCALAPPDATA")/Microsoft/WinGet/Links"
+fi
+
 command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat)
@@ -39,8 +45,10 @@ mapfile -t parsed < <(printf '%s' "$input" | jq -r --arg now "$(date +%s)" '
         + field("agent_id"; "a") + field("notification_type"; "n") + field("source"; "s") | tojson)
 ' 2>/dev/null)
 
-# A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR
-parsed=("${parsed[@]%$'\r'}")
+# A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR.
+# The CR goes through a variable: inside "${parsed[@]%...}" a $'\r' is not expanded and matches nothing.
+cr=$'\r'
+parsed=("${parsed[@]%"$cr"}")
 
 # Exactly two lines: a session_id with a newline in it would add more.
 [[ ${#parsed[@]} -eq 2 ]] || exit 0

@@ -23,6 +23,60 @@ public sealed class LaunchCommandTests
     }
 
     [Fact]
+    public void BuildNative_WorktreeAndPrompt_OpensANewWindowInTheFolderWithGitBashRunningTm()
+    {
+        // Act
+        LaunchCommand command = LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code\my app", "eng-42", PromptId);
+
+        // Assert
+        Assert.Equal("wt.exe", command.FileName);
+        Assert.Equal(
+            [
+                "-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", NativePaths.Bash, "-c",
+                $"exec ~/.local/bin/tm --wt eng-42 --prompt-file ~/.claude/cctokmon-launch/{PromptId}.txt",
+            ],
+            command.Arguments);
+    }
+
+    [Fact]
+    public void BuildNative_NoWorktreeAndNoPrompt_RunsTmThroughExecSoTheCommandHasASpaceAndIsQuoted()
+    {
+        // Act
+        LaunchCommand command = LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code", null, null);
+
+        // Assert
+        Assert.Equal("exec ~/.local/bin/tm", command.Arguments[^1]);
+    }
+
+    [Fact]
+    public void BuildNative_SemicolonInTheFolder_IsEscapedForWindowsTerminal()
+    {
+        // Act
+        LaunchCommand command = LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code\a;b", null, null);
+
+        // Assert
+        Assert.Equal(@"C:\code\a\;b", command.Arguments[5]);
+    }
+
+    [Theory]
+    [InlineData("~")]
+    [InlineData(@"~\code")]
+    [InlineData("/home/alice")]
+    [InlineData("code")]
+    public void BuildNative_FolderIsNotAFullWindowsPath_IsRefused(string folder)
+    {
+        // Act / Assert
+        Assert.Throws<ArgumentException>(() => LaunchCommand.BuildNative(NativePaths.Bash,folder, null, null));
+    }
+
+    [Fact]
+    public void BuildNative_InvalidWorktreeName_IsRefused()
+    {
+        // Act / Assert
+        Assert.Throws<ArgumentException>(() => LaunchCommand.BuildNative(NativePaths.Bash,@"C:\code", "a b", null));
+    }
+
+    [Fact]
     public void Build_NoWorktreeAndNoPrompt_RunsPlainTm()
     {
         // Act

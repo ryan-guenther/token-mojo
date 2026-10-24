@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace TokenMojo.Core;
 
-/// <summary>Finds the git repositories directly under the configured folders of a distro, through its share.</summary>
+/// <summary>Finds the git repositories directly under the configured folders of a distro, through its share, or of Windows itself.</summary>
 public static partial class RepoScanner
 {
     /// <summary>Never throws: a root or repository that cannot be read is skipped, since the distro may stop mid-scan.</summary>
@@ -16,7 +16,9 @@ public static partial class RepoScanner
         foreach (string root in roots)
         {
             if (LinuxFolder.Expand(root, home) is not { } folder) continue;
-            foreach (RepoInfo repo in ScanRoot(distro, folder.TrimEnd('/'), wslShareRoot))
+            string linuxRoot = folder.TrimEnd('/');
+            string rootOnShare = Path.Combine(wslShareRoot, distro, linuxRoot.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+            foreach (RepoInfo repo in ScanRoot(rootOnShare, linuxRoot, name => $"{linuxRoot}/{name}"))
             {
                 if (seen.Add(repo.Path)) repos.Add(repo);
             }
@@ -24,15 +26,35 @@ public static partial class RepoScanner
         return repos;
     }
 
-    private static List<RepoInfo> ScanRoot(string distro, string root, string wslShareRoot)
+    /// <summary>The same for Claude Code on Windows itself: the roots are Windows folders, read from the local disk.</summary>
+    /// <param name="home">The user profile, which a tilde root means.</param>
+    public static IReadOnlyList<RepoInfo> ScanWindows(string home, IEnumerable<string> roots)
+    {
+        List<RepoInfo> repos = new();
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string root in roots)
+        {
+            string folder = WindowsFolder.Expand(root, home);
+            string windowsRoot = folder.Length > 3 ? folder.TrimEnd('\\') : folder;
+            foreach (RepoInfo repo in ScanRoot(windowsRoot, windowsRoot, name => Path.Combine(windowsRoot, name)))
+            {
+                if (seen.Add(repo.Path)) repos.Add(repo);
+            }
+        }
+        return repos;
+    }
+
+    /// <param name="onDisk">The root as this process reads it.</param>
+    /// <param name="root">The root as sessions see it, for messages.</param>
+    /// <param name="pathOf">A repository's path as sessions see it, from its folder name.</param>
+    private static List<RepoInfo> ScanRoot(string onDisk, string root, Func<string, string> pathOf)
     {
         List<RepoInfo> repos = new();
         try
         {
-            string rootOnShare = Path.Combine(wslShareRoot, distro, root.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-            foreach (string directory in Directory.EnumerateDirectories(rootOnShare).Order(StringComparer.Ordinal))
+            foreach (string directory in Directory.EnumerateDirectories(onDisk).Order(StringComparer.Ordinal))
             {
-                if (TryReadRepo(directory, root) is { } repo) repos.Add(repo);
+                if (TryReadRepo(directory, pathOf) is { } repo) repos.Add(repo);
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -43,13 +65,13 @@ public static partial class RepoScanner
     }
 
     // A worktree or submodule has a .git file, not a directory, and is not a root to start sessions in.
-    private static RepoInfo? TryReadRepo(string directory, string root)
+    private static RepoInfo? TryReadRepo(string directory, Func<string, string> pathOf)
     {
         try
         {
             string git = Path.Combine(directory, ".git");
             if (!Directory.Exists(git)) return null;
-            return new RepoInfo($"{root}/{Path.GetFileName(directory)}", ReadRemotes(Path.Combine(git, "config")));
+            return new RepoInfo(pathOf(Path.GetFileName(directory)), ReadRemotes(Path.Combine(git, "config")));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

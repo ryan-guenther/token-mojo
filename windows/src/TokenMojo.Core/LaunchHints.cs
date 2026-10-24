@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace TokenMojo.Core;
 
-/// <param name="Folder">The Linux folder the link points at; null when it matches none of the configured ones.</param>
+/// <param name="Folder">The folder the link points at, Linux or Windows like the repositories it was found among; null when it matches none of the configured ones.</param>
 /// <param name="Worktree">The worktree name to suggest; null when the text holds no link.</param>
 /// <param name="Description">What was detected, for the launcher's hint line.</param>
 public sealed record LaunchHint(string? Folder, string? Worktree, string? Description)
@@ -16,7 +16,7 @@ public sealed record LaunchHint(string? Folder, string? Worktree, string? Descri
 /// <summary>A named remote of a git repository and its URL.</summary>
 public sealed record GitRemote(string Name, string Url);
 
-/// <summary>A git repository found on a distro: its folder as Linux sees it and its remotes, in config order.</summary>
+/// <summary>A git repository found on a distro or on Windows: its folder as the session sees it and its remotes, in config order.</summary>
 public sealed record RepoInfo(string Path, IReadOnlyList<GitRemote> Remotes);
 
 /// <summary>Reads the first Linear issue or GitHub pull request link in a prompt and suggests where to work on it.</summary>

@@ -28,8 +28,6 @@ internal static class SessionControl
     private const string Caption = "TokenMojo";
     private const string ConfirmResumeText =
         "This session looks like it's still running, but its window wasn't found. Resume in a new terminal anyway?";
-    private const string UnavailableText =
-        "This session's terminal window wasn't found. Only sessions started with tm can be focused, and only while their tab is the active one in its window. Resuming works for WSL sessions only.";
     private const string FocusRefusedText =
         "Windows did not allow switching to that window. Switch to it from the taskbar.";
     private const string WindowGoneText = "That session's terminal window is no longer open.";
@@ -42,18 +40,28 @@ internal static class SessionControl
     private static async Task<bool> ActivateUnguardedAsync(SessionTarget target)
     {
         TerminalWindow? window = FindWindow(target.Id);
-        switch (SessionActions.Decide(target.Status, target.Distro, windowFound: window is not null))
+        switch (SessionActions.Decide(target.Status, windowFound: window is not null))
         {
             case SessionAction.Focus:
                 return FocusWindow(window!);
             case SessionAction.ConfirmResume:
                 return Confirm(ConfirmResumeText) && await ResumeUnguardedAsync(target);
-            case SessionAction.Resume:
-                return await ResumeUnguardedAsync(target);
             default:
-                Warn(UnavailableText);
-                return false;
+                return await ResumeUnguardedAsync(target);
         }
+    }
+
+    /// <summary>The user profile, home of the Windows source's ~/.claude, and what a folder's ~ means in the launcher.</summary>
+    public static string WindowsHome { get; } = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>Git Bash's ~, where install.sh put tm and where tm reads a prompt file; usually the profile, but HOME may move it.</summary>
+    public static string GitBashHome { get; } = GitBash.Home(Environment.GetEnvironmentVariable, WindowsHome);
+
+    /// <summary>Git Bash, and why a session cannot run on Windows itself (null when it can). Reads the disk, so off the UI thread.</summary>
+    internal static (string? Bash, string? Problem) NativeCheck()
+    {
+        string? bash = GitBash.Find(Environment.GetEnvironmentVariable, File.Exists);
+        return (bash, LaunchTargets.NativeProblem(bash, TmInstall.InspectLocal(GitBashHome), GitBashHome));
     }
 
     public static bool HasWindow(string sessionId) => FindWindow(sessionId) is not null;
@@ -72,7 +80,7 @@ internal static class SessionControl
 
     private static async Task<bool> ResumeUnguardedAsync(SessionTarget target)
     {
-        if (target.Distro is not { } distro) return false;
+        if (target.Distro is not { } distro) return await ResumeNativeAsync(target);
         if (await Task.Run(() => TmProblem(distro, target.User ?? "", target.Home)) is { } problem)
         {
             Warn(problem);
@@ -93,10 +101,38 @@ internal static class SessionControl
         }
     }
 
+    // A session that ran on Windows itself: Git Bash runs tm in a Windows folder.
+    private static async Task<bool> ResumeNativeAsync(SessionTarget target)
+    {
+        try
+        {
+            (ResumeCommand? command, string? problem) = await Task.Run(() =>
+            {
+                (string? bash, string? problem) = NativeCheck();
+                return problem is null
+                    ? (ResumeCommand.BuildNative(bash!, target.Id, target.Folder, Directory.Exists, WindowsHome), null)
+                    : ((ResumeCommand?)null, problem);
+            });
+            if (problem is not null)
+            {
+                Warn(problem);
+                return false;
+            }
+            TerminalProcess.Start(command!);
+            return true;
+        }
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException or ArgumentException)
+        {
+            Trace.TraceWarning("TokenMojo: cannot resume session {0}: {1}", target.Id, e.Message);
+            Warn($"Could not open Windows Terminal to resume the session: {e.Message}");
+            return false;
+        }
+    }
+
     public static async Task<bool> OpenFolderAsync(SessionTarget target)
     {
-        if (target.Distro is not { } distro || target.Folder is not { } folder) return false;
-        string path = WslPaths.SharePath(distro, folder);
+        if (target.Folder is not { } folder) return false;
+        string path = target.Distro is { } distro ? WslPaths.SharePath(distro, folder) : folder;
         if (!await Task.Run(() => Directory.Exists(path)))
         {
             Warn($"The folder no longer exists: {folder}");

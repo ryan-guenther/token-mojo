@@ -8,6 +8,52 @@ public sealed class TmInstallTests
     private const string TmScript = "#!/usr/bin/env bash\n# cctokmon-tm.sh — start or resume a Claude Code session in this terminal tab\n\nset -euo pipefail\n";
 
     [Theory]
+    [InlineData(WindowsLauncher, TmState.Ours)]
+    [InlineData("#!/bin/sh\nexec /opt/other/tm \"$@\"\n", TmState.Foreign)]
+    public void InspectLocal_TmInTheProfile_IsClassifiedByItsMarkers(string content, TmState expected)
+    {
+        // Arrange
+        using TempDir temp = new();
+        temp.Write(".local/bin/tm", content, DateTimeOffset.UtcNow);
+
+        // Act / Assert
+        Assert.Equal(expected, TmInstall.InspectLocal(temp.Path));
+    }
+
+    [Fact]
+    public void InspectLocal_NoTm_IsMissing()
+    {
+        // Arrange
+        using TempDir temp = new();
+
+        // Act / Assert
+        Assert.Equal(TmState.Missing, TmInstall.InspectLocal(temp.Path));
+    }
+
+    [Fact]
+    public void InspectLocal_TmIsAFolder_IsForeign()
+    {
+        // Arrange
+        using TempDir temp = new();
+        temp.MakeDir(".local/bin/tm");
+
+        // Act / Assert
+        Assert.Equal(TmState.Foreign, TmInstall.InspectLocal(temp.Path));
+    }
+
+    [Fact]
+    public void InspectLocal_TmCannotBeRead_IsUnreadable()
+    {
+        // Arrange
+        using TempDir temp = new();
+        string tm = temp.Write(".local/bin/tm", WindowsLauncher, DateTimeOffset.UtcNow);
+        using IDisposable denied = TempDir.DenyRead(tm);
+
+        // Act / Assert
+        Assert.Equal(TmState.Unreadable, TmInstall.InspectLocal(temp.Path));
+    }
+
+    [Theory]
     [InlineData(WindowsLauncher)]
     [InlineData(TmScript)]
     [InlineData("#!/usr/bin/env bash\r\n# tm launcher\r\nexec bash x\r\n")]

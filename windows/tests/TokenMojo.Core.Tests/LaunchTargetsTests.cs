@@ -33,6 +33,87 @@ public sealed class LaunchTargetsTests
     }
 
     [Fact]
+    public void ChooseDistro_WindowsConfigured_IsWindowsEvenWithADistroBeforeIt()
+    {
+        // Act / Assert
+        Assert.Equal(LaunchTargets.Windows, LaunchTargets.ChooseDistro("windows", ["Ubuntu", LaunchTargets.Windows]));
+    }
+
+    [Fact]
+    public void Targets_DistrosWithAClaudeFolderInRunningOrder_ThenWindows()
+    {
+        // Arrange
+        ClaudeSource[] sources = [Source("alice", distro: "Debian"), Source("bob"), WindowsSource()];
+
+        // Act
+        IReadOnlyList<string> targets = LaunchTargets.Targets(["Ubuntu", "docker-desktop", "Debian"], sources, windowsHasClaude: true);
+
+        // Assert
+        Assert.Equal(["Ubuntu", "Debian", LaunchTargets.Windows], targets);
+    }
+
+    [Fact]
+    public void Targets_OnlyADistroWithoutClaude_IsJustWindows()
+    {
+        // Act
+        IReadOnlyList<string> targets = LaunchTargets.Targets(["docker-desktop"], [WindowsSource()], windowsHasClaude: true);
+
+        // Assert
+        Assert.Equal([LaunchTargets.Windows], targets);
+    }
+
+    [Fact]
+    public void Targets_DistroNamedWindows_IsLeftOutSoItIsNotTakenForTheNativeTarget()
+    {
+        // Act
+        IReadOnlyList<string> targets = LaunchTargets.Targets(["windows", "Ubuntu"], [Source("alice", distro: "windows"), Source("bob")], windowsHasClaude: true);
+
+        // Assert
+        Assert.Equal(["Ubuntu", LaunchTargets.Windows], targets);
+    }
+
+    [Fact]
+    public void Targets_NoClaudeOnWindows_LeavesWindowsOut()
+    {
+        // Act
+        IReadOnlyList<string> targets = LaunchTargets.Targets(["Ubuntu"], [Source("alice"), WindowsSource()], windowsHasClaude: false);
+
+        // Assert
+        Assert.Equal(["Ubuntu"], targets);
+    }
+
+    [Fact]
+    public void NativeProblem_GitBashAndOurTm_IsNone()
+    {
+        // Act / Assert
+        Assert.Null(LaunchTargets.NativeProblem(NativePaths.Bash, TmState.Ours, NativePaths.Home));
+    }
+
+    [Fact]
+    public void NativeProblem_NoGitBash_SaysSoWhateverTheTm()
+    {
+        // Act
+        string? problem = LaunchTargets.NativeProblem(null, TmState.Ours, NativePaths.Home);
+
+        // Assert
+        Assert.Contains("Git Bash", problem);
+    }
+
+    [Theory]
+    [InlineData(TmState.Missing, "Could not find tm")]
+    [InlineData(TmState.Unreadable, "could not be read")]
+    [InlineData(TmState.Foreign, "is not cctokmon's")]
+    public void NativeProblem_TmNotOurs_NamesItsPath(TmState state, string expected)
+    {
+        // Act
+        string? problem = LaunchTargets.NativeProblem(NativePaths.Bash, state, NativePaths.Home + @"\");
+
+        // Assert
+        Assert.Contains(expected, problem);
+        Assert.Contains(TmInstall.LocalPath(NativePaths.Home + @"\"), problem);
+    }
+
+    [Fact]
     public void ChooseUser_DefaultUserHasTm_IsTheDefaultUserEvenWhenAnotherComesFirst()
     {
         // Arrange
@@ -248,4 +329,6 @@ public sealed class LaunchTargetsTests
 
     private static ClaudeSource Source(string user, bool isDefault = false, string distro = "Ubuntu") =>
         new($"{distro}:{user}", "s", "d", distro, user, $"/home/{user}", isDefault);
+
+    private static ClaudeSource WindowsSource() => new("Windows", "s", "d");
 }
