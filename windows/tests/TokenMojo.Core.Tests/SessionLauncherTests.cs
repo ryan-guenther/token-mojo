@@ -27,6 +27,55 @@ public sealed class SessionLauncherTests
     }
 
     [Fact]
+    public void LaunchNative_Prompt_IsDepositedThenGitBashRunsTmWithIt()
+    {
+        // Arrange
+        LaunchRequest request = new(LaunchTargets.Windows, "", @"C:\code\my app", "eng-42", "fix the build; then test");
+        FakeHandoff handoff = new();
+        TerminalCommand? started = null;
+
+        // Act
+        SessionLauncher.LaunchNative(request, @"C:\Git\bin\bash.exe", handoff, command => started = command);
+
+        // Assert
+        Guid id = handoff.Deposited.Single().Id;
+        Assert.Equal(
+            ["-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", @"C:\Git\bin\bash.exe", "-c",
+                $"exec ~/.local/bin/tm --wt eng-42 --prompt-file ~/.claude/cctokmon-launch/{id}.txt"],
+            started!.Arguments);
+        Assert.Equal("fix the build; then test", handoff.Deposited.Single().Prompt);
+    }
+
+    [Fact]
+    public void LaunchNative_TerminalFailsToStart_RemovesThePromptFile()
+    {
+        // Arrange
+        LaunchRequest request = new(LaunchTargets.Windows, "", @"C:\code", null, "hello");
+        FakeHandoff handoff = new();
+
+        // Act
+        Assert.Throws<Win32Exception>(() =>
+            SessionLauncher.LaunchNative(request, @"C:\Git\bin\bash.exe", handoff, _ => throw new Win32Exception("no wt.exe")));
+
+        // Assert
+        Assert.Equal([handoff.Deposited.Single().Id], handoff.Discarded.Select(discard => discard.Id));
+    }
+
+    [Fact]
+    public void LaunchNative_FolderIsNotAFullPath_IsRefusedBeforeAnyFileIsWritten()
+    {
+        // Arrange
+        LaunchRequest request = new(LaunchTargets.Windows, "", "~", null, "hello");
+        FakeHandoff handoff = new();
+
+        // Act
+        Assert.Throws<ArgumentException>(() => SessionLauncher.LaunchNative(request, @"C:\Git\bin\bash.exe", handoff, _ => { }));
+
+        // Assert
+        Assert.Empty(handoff.Deposited);
+    }
+
+    [Fact]
     public void Launch_PromptFileNameInTheCommand_IsTheFileThatWasDeposited()
     {
         // Arrange

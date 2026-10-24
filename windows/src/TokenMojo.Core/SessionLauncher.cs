@@ -21,11 +21,18 @@ public static class SessionLauncher
 {
     /// <summary>Deposits the prompt file, then hands the terminal command to <paramref name="start"/>.</summary>
     /// <param name="start">Opens the terminal; whatever it throws is rethrown after the prompt file is removed.</param>
-    public static void Launch(LaunchRequest request, IPromptHandoff handoff, Action<TerminalCommand> start)
+    public static void Launch(LaunchRequest request, IPromptHandoff handoff, Action<TerminalCommand> start) =>
+        Launch(request, promptId => LaunchCommand.Build(request.Distro, request.User, request.Folder, request.Worktree, promptId), handoff, start);
+
+    /// <summary>The same for Claude Code on Windows itself: the request's folder is a full Windows path, and Git Bash runs `tm`.</summary>
+    public static void LaunchNative(LaunchRequest request, string bash, IPromptHandoff handoff, Action<TerminalCommand> start) =>
+        Launch(request, promptId => LaunchCommand.BuildNative(bash, request.Folder, request.Worktree, promptId), handoff, start);
+
+    private static void Launch(LaunchRequest request, Func<Guid?, LaunchCommand> build, IPromptHandoff handoff, Action<TerminalCommand> start)
     {
         Guid? promptId = string.IsNullOrWhiteSpace(request.Prompt) ? null : Guid.NewGuid();
         // Built first, so a request that would be refused leaves no file behind.
-        LaunchCommand command = LaunchCommand.Build(request.Distro, request.User, request.Folder, request.Worktree, promptId);
+        LaunchCommand command = build(promptId);
         if (promptId is { } id) Deposit(handoff, request, id);
         bool started = false;
         try

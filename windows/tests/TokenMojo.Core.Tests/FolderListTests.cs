@@ -111,6 +111,25 @@ public sealed class FolderListTests
         Assert.Equal(["~", "/home/alice/widgets"], folders);
     }
 
+    [Fact]
+    public void BuildWindows_DefaultThenWindowsSessionRepositoriesThenRepos_WithTheProfileAsTilde()
+    {
+        // Arrange
+        SessionSnapshot[] sessions =
+        [
+            Session("a", @"C:\Users\ann\older", minutesAgo: 30, distro: null),
+            Session("b", @"D:\code\app\.claude\worktrees\pr-12", minutesAgo: 5, distro: null),
+            Session("c", "/home/alice/linux", minutesAgo: 1),
+        ];
+        RepoInfo[] repos = [new(@"D:\code\widgets", []), new(@"D:\code\APP", [])];
+
+        // Act
+        IReadOnlyList<string> folders = FolderList.BuildWindows("~", @"C:\Users\ann", sessions, repos);
+
+        // Assert
+        Assert.Equal(["~", @"D:\code\app", @"~\older", @"D:\code\widgets"], folders);
+    }
+
     private static SessionSnapshot Session(string id, string? folder, int minutesAgo, string? distro = "Ubuntu")
     {
         BridgeState state = new(id, null, null, new BridgeWorkspace(folder, folder), null, null, null);

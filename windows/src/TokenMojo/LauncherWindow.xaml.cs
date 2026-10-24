@@ -16,10 +16,12 @@ namespace TokenMojo;
 /// </summary>
 public partial class LauncherWindow : Window
 {
-    private const string NoDistroText = "No WSL distro is running. Open one, then reopen this window.";
+    private const string NoDistroText =
+        "Claude Code was not found on Windows or in a running WSL distro. Run install.sh, or open the distro, then reopen this window.";
     private const string NotOnDistroText =
         "Pick a folder inside {0}. Folders on other drives are not available to sessions started here.";
     private const string FolderInvalidText = "The folder must be ~, a path starting with ~/, or a path starting with /.";
+    private const string WindowsFolderInvalidText = @"The folder must be a full path such as C:\code, or ~ or a path starting with ~\.";
     private const string WorktreeNameMissingText = "Enter a worktree name, or untick Worktree.";
 
     private readonly string _settingsPath;
@@ -29,7 +31,10 @@ public partial class LauncherWindow : Window
     private IReadOnlyList<ClaudeSource> _sources = [];
     private IReadOnlyList<SessionSnapshot> _sessions = [];
     private IReadOnlyList<RepoInfo> _repos = [];
+    // A WSL distro, or LaunchTargets.Windows for Claude Code on Windows itself.
     private string? _distro;
+    // Git Bash, for a Windows target whose check passed.
+    private string? _bash;
     private string? _user;
     private string? _home;
     // Why the launch user is not the distro's default one; shown beside the link hint.
@@ -100,10 +105,14 @@ public partial class LauncherWindow : Window
     private LauncherData LoadData()
     {
         Settings settings = Settings.Load(_settingsPath);
-        IReadOnlyList<string> distros = _wsl.Running();
+        IReadOnlyList<string> running = _wsl.Running();
         IReadOnlyList<ClaudeSource> sources = _locator.Locate();
-        return new LauncherData(settings, distros, sources, SessionStore.LoadSessions(sources, DateTimeOffset.Now));
+        bool windowsHasClaude = Directory.Exists(Path.Combine(SessionControl.WindowsHome, ".claude"));
+        IReadOnlyList<string> targets = LaunchTargets.Targets(running, sources, windowsHasClaude);
+        return new LauncherData(settings, targets, sources, SessionStore.LoadSessions(sources, DateTimeOffset.Now));
     }
+
+    private bool OnWindows => _distro is { } target && LaunchTargets.IsWindows(target);
 
     private void ShowDistros(IReadOnlyList<string> distros, string chosen)
     {
@@ -125,8 +134,14 @@ public partial class LauncherWindow : Window
         _home = null;
         _userNote = null;
         _userProblem = null;
+        _bash = null;
         _choosing = true;
         UpdateStartEnabled();
+        if (LaunchTargets.IsWindows(distro))
+        {
+            await ChooseWindowsAsync(generation);
+            return;
+        }
         LaunchUser choice = await ChooseUserAsync(distro);
         if (_closed || generation != _generation) return;
         _repos = [];
@@ -138,17 +153,48 @@ public partial class LauncherWindow : Window
         await ScanReposAsync(distro, generation);
     }
 
+    // Claude Code on Windows itself: one user, the profile, and Git Bash to run tm. Its problem, if any, is shown like a distro's.
+    private async Task ChooseWindowsAsync(int generation)
+    {
+        _home = SessionControl.WindowsHome;
+        _repos = [];
+        HideError();
+        ShowFolders(Folders());
+        ApplyHint();
+        (string? bash, string? problem) = await Task.Run(SessionControl.NativeCheck);
+        if (_closed || generation != _generation) return;
+        _bash = bash;
+        _userProblem = problem;
+        if (problem is not null) ShowError(problem);
+        _choosing = false;
+        UpdateStartEnabled();
+        await ScanReposAsync(LaunchTargets.Windows, generation);
+    }
+
     // Only the generation it started in may use the answer: a newer distro or home has its own scan.
     private async Task ScanReposAsync(string distro, int generation)
     {
         Settings settings = _settings!;
         string? home = _home;
-        IReadOnlyList<RepoInfo> repos = await Task.Run(() => RepoScanner.Scan(distro, home, settings.RepoRoots));
+        IReadOnlyList<RepoInfo> repos = await Task.Run(() => LaunchTargets.IsWindows(distro)
+            ? RepoScanner.ScanWindows(home!, settings.WindowsRepoRoots)
+            : RepoScanner.Scan(distro, home, settings.RepoRoots));
         if (_closed || generation != _generation) return;
         _repos = repos;
-        ShowFolders(FolderList.Build(settings.DefaultFolder, distro, home, _sessions, repos));
+        ShowFolders(Folders());
         ApplyHint();
     }
+
+    private IReadOnlyList<string> Folders() => OnWindows
+        ? FolderList.BuildWindows(_settings!.WindowsDefaultFolder, _home!, _sessions, _repos)
+        : FolderList.Build(_settings!.DefaultFolder, _distro!, _home, _sessions, _repos);
+
+    private string DefaultFolder => OnWindows ? _settings!.WindowsDefaultFolder : _settings!.DefaultFolder;
+
+    private bool IsValidFolder(string folder) => OnWindows ? WindowsFolder.IsValid(folder) : LinuxFolder.IsValid(folder);
+
+    private string Abbreviate(string folder) =>
+        OnWindows ? WindowsFolder.Abbreviate(folder, _home!) : LinuxFolder.Abbreviate(folder, _home);
 
     private void UpdateStartEnabled() => StartButton.IsEnabled = !_starting && !_choosing;
 
@@ -176,7 +222,7 @@ public partial class LauncherWindow : Window
         _userProblem = choice.Problem;
         HideError();
         if (choice.Problem is not null) ShowError(choice.Problem);
-        ShowFolders(FolderList.Build(_settings!.DefaultFolder, distro, _home, _sessions, _repos));
+        ShowFolders(Folders());
         ApplyHint();
         return homeChanged;
     }
@@ -206,8 +252,9 @@ public partial class LauncherWindow : Window
         HintText.Text = string.Join("\n", lines);
         HintText.Visibility = lines.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _applying = true;
+        // A Linear team's folder is a Linux path, which a session on Windows cannot start in.
         if (!_folderChosen)
-            FolderBox.Text = hint.Folder is { } folder ? LinuxFolder.Abbreviate(folder, _home) : _settings.DefaultFolder;
+            FolderBox.Text = hint.Folder is { } folder && IsValidFolder(folder) ? Abbreviate(folder) : DefaultFolder;
         if (!_worktreeChosen)
         {
             WorktreeCheck.IsChecked = hint.UseWorktree;
@@ -223,9 +270,9 @@ public partial class LauncherWindow : Window
         HideError();
         string folder = FolderBox.Text.Trim();
         string? worktree = WorktreeCheck.IsChecked == true ? WorktreeBox.Text.Trim() : null;
-        if (!LinuxFolder.IsValid(folder))
+        if (!IsValidFolder(folder))
         {
-            ShowError(FolderInvalidText);
+            ShowError(OnWindows ? WindowsFolderInvalidText : FolderInvalidText);
             return;
         }
         if (worktree is "")
@@ -265,6 +312,11 @@ public partial class LauncherWindow : Window
     // Returns what to show the user when the session could not be started, else null.
     private async Task<string?> StartSessionAsync(string distro, string folder, string? worktree)
     {
+        if (LaunchTargets.IsWindows(distro))
+        {
+            string prompt = PromptBox.Text;
+            return await Task.Run(() => TryLaunchNative(folder, worktree, prompt));
+        }
         if (_user is null)
         {
             // A check that failed (or found nothing) when the window opened must not stick: Start asks again.
@@ -288,6 +340,28 @@ public partial class LauncherWindow : Window
             if (start is null || !Directory.Exists(WslPaths.SharePath(request.Distro, start)))
                 return $"The folder does not exist in {request.Distro}: {request.Folder}";
             SessionLauncher.Launch(request, new WslPromptHandoff(), TerminalProcess.Start);
+            return null;
+        }
+        catch (Exception e) when (e is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            System.Diagnostics.Trace.TraceWarning("TokenMojo: cannot start a session: {0}", e.Message);
+            return $"Could not start the session: {e.Message}";
+        }
+    }
+
+    // Claude Code on Windows itself: the prompt file goes straight into the profile and Git Bash runs tm.
+    private static string? TryLaunchNative(string folder, string? worktree, string prompt)
+    {
+        try
+        {
+            // Checked again: Git Bash or tm may have changed since the window opened.
+            (string? bash, string? problem) = SessionControl.NativeCheck();
+            if (problem is not null) return problem;
+            string home = SessionControl.WindowsHome;
+            string start = WindowsFolder.Expand(folder, home);
+            if (!Directory.Exists(start)) return $"The folder does not exist: {folder}";
+            LaunchRequest request = new(LaunchTargets.Windows, "", start, worktree, prompt, home);
+            SessionLauncher.LaunchNative(request, bash!, new LocalPromptHandoff(home), TerminalProcess.Start);
             return null;
         }
         catch (Exception e) when (e is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
@@ -341,6 +415,11 @@ public partial class LauncherWindow : Window
     private void OnBrowse(object sender, RoutedEventArgs e)
     {
         if (_distro is not { } distro) return;
+        if (OnWindows)
+        {
+            BrowseWindows();
+            return;
+        }
         OpenFolderDialog dialog = new()
         {
             Title = $"Choose a folder in {distro}",
@@ -355,6 +434,25 @@ public partial class LauncherWindow : Window
         HideError();
         _applying = true;
         FolderBox.Text = LinuxFolder.Abbreviate(linuxPath, _home);
+        _applying = false;
+        _folderChosen = true;
+    }
+
+    // Any local folder will do; it opens at the folder in the box when that exists.
+    private void BrowseWindows()
+    {
+        string home = _home!;
+        string current = FolderBox.Text.Trim();
+        string? initial = WindowsFolder.IsValid(current) ? WindowsFolder.Expand(current, home) : null;
+        OpenFolderDialog dialog = new()
+        {
+            Title = "Choose a folder",
+            InitialDirectory = initial is not null && Directory.Exists(initial) ? initial : home,
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        HideError();
+        _applying = true;
+        FolderBox.Text = WindowsFolder.Abbreviate(dialog.FolderName, home);
         _applying = false;
         _folderChosen = true;
     }

@@ -46,6 +46,28 @@ public static class TmInstall
         _ => new TmCheck(TmState.CouldNotRun, exitCode),
     };
 
+    /// <summary>
+    /// The tm in a Windows user profile, which Git Bash runs. install.sh writes a launcher script there rather than a
+    /// symlink, so it is read directly: the first 4 KB, which hold the markers.
+    /// </summary>
+    public static TmState InspectLocal(string windowsHome)
+    {
+        string path = Path.Combine(windowsHome, ".local", "bin", "tm");
+        try
+        {
+            if (Directory.Exists(path)) return TmState.Foreign;
+            if (!File.Exists(path)) return TmState.Missing;
+            using FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            byte[] head = new byte[4096];
+            int read = file.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+            return Classify(System.Text.Encoding.UTF8.GetString(head, 0, read));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return TmState.Unreadable;
+        }
+    }
+
     public static TmState Classify(string content)
     {
         bool ours = content.Split('\n').Select(line => line.TrimEnd('\r'))

@@ -254,6 +254,49 @@ public sealed class RepoScannerTests : IDisposable
         Assert.Empty(repos);
     }
 
+    [Fact]
+    public void ScanWindows_RepoUnderARoot_IsFoundAtItsLocalPathWithItsRemotes()
+    {
+        // Arrange
+        string git = _temp.MakeDir("code/widgets/.git");
+        File.WriteAllText(Path.Combine(git, "config"), OriginConfig);
+        _temp.MakeDir("code/not-a-repo");
+
+        // Act
+        IReadOnlyList<RepoInfo> repos = RepoScanner.ScanWindows(_temp.Path, [Path.Combine(_temp.Path, "code")]);
+
+        // Assert
+        RepoInfo repo = Assert.Single(repos);
+        Assert.Equal(Path.Combine(_temp.Path, "code", "widgets"), repo.Path);
+        Assert.Contains(new GitRemote("origin", "git@github.com:octo/widgets.git"), repo.Remotes);
+    }
+
+    [Fact]
+    public void ScanWindows_TildeRoot_IsTheProfile()
+    {
+        // Arrange
+        _temp.MakeDir("widgets/.git");
+
+        // Act
+        IReadOnlyList<RepoInfo> repos = RepoScanner.ScanWindows(_temp.Path, ["~"]);
+
+        // Assert
+        Assert.Equal([Path.Combine(_temp.Path, "widgets")], repos.Select(repo => repo.Path));
+    }
+
+    [Fact]
+    public void ScanWindows_MissingRoot_IsSkipped()
+    {
+        // Arrange
+        _temp.MakeDir("widgets/.git");
+
+        // Act
+        IReadOnlyList<RepoInfo> repos = RepoScanner.ScanWindows(_temp.Path, [Path.Combine(_temp.Path, "gone"), "~"]);
+
+        // Assert
+        Assert.Single(repos);
+    }
+
     private IReadOnlyList<RepoInfo> Scan(IReadOnlyList<string> roots) => RepoScanner.Scan("Ubuntu", "/home/alice", roots, _temp.Path);
 
     private string MakeRepo(string relativePath, string config)

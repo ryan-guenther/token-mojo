@@ -179,8 +179,8 @@
         <TextBlock x:Name="HintText" Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed"
                    AutomationProperties.LiveSetting="Polite" />
 
-        <TextBlock x:Name="DistroCaption" Style="{StaticResource Caption}" Text="WSL distro" Margin="0,12,0,4" Visibility="Collapsed" />
-        <ComboBox x:Name="DistroBox" Visibility="Collapsed" AutomationProperties.Name="WSL distro"
+        <TextBlock x:Name="DistroCaption" Style="{StaticResource Caption}" Text="Run in" Margin="0,12,0,4" Visibility="Collapsed" />
+        <ComboBox x:Name="DistroBox" Visibility="Collapsed" AutomationProperties.Name="Run in"
                   SelectionChanged="OnDistroChanged" />
 
         <TextBlock Style="{StaticResource Caption}" Text="Folder" Margin="0,12,0,4" />
