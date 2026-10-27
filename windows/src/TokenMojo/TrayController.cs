@@ -64,6 +64,7 @@ internal sealed class TrayController : IDisposable
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         Render(null, DateTimeOffset.Now);
         _notifyIcon.Visible = true;
+        TerminalProfileFragment.Ensure();
 
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();

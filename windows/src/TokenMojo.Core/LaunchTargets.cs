@@ -8,13 +8,51 @@ public sealed record LaunchUser(ClaudeSource? Source, string? Problem, string? N
 /// <summary>Where the launcher starts a session: which distro, and which Linux user's home it uses.</summary>
 public static class LaunchTargets
 {
+    /// <summary>The target that starts sessions on Windows itself rather than in a WSL distro.</summary>
+    public const string Windows = "Windows";
+
     private const string NoClaudeFolderText =
         "Could not find a Claude Code folder in {0}. Run install.sh in that distro, then reopen this window.";
+    private const string NoGitBashText =
+        "Could not find Git Bash, which runs tm for sessions on Windows. Install Git for Windows, or set CLAUDE_CODE_GIT_BASH_PATH to its bash.exe.";
 
-    /// <summary>The configured distro when it is running, else the first running one; null when none is.</summary>
-    public static string? ChooseDistro(string? configured, IReadOnlyList<string> running) =>
-        running.FirstOrDefault(distro => string.Equals(distro, configured, StringComparison.OrdinalIgnoreCase))
-        ?? running.FirstOrDefault();
+    /// <summary>
+    /// Where sessions can be started: each running distro with a Claude Code folder, in the order given, then Windows when
+    /// Claude Code is set up there. A distro without one, such as Docker Desktop's, has nothing to start. A distro named
+    /// Windows is left out, since its name is the native target's.
+    /// </summary>
+    public static IReadOnlyList<string> Targets(IReadOnlyList<string> running, IEnumerable<ClaudeSource> sources, bool windowsHasClaude)
+    {
+        HashSet<string> withClaude = sources.Select(source => source.Distro).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        List<string> targets = running.Where(distro => withClaude.Contains(distro) && !IsWindows(distro)).ToList();
+        if (windowsHasClaude) targets.Add(Windows);
+        return targets;
+    }
+
+    public static bool IsWindows(string target) => string.Equals(target, Windows, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The configured target when it is available, else the first one; null when there is none.</summary>
+    public static string? ChooseDistro(string? configured, IReadOnlyList<string> targets) =>
+        targets.FirstOrDefault(target => string.Equals(target, configured, StringComparison.OrdinalIgnoreCase))
+        ?? targets.FirstOrDefault();
+
+    /// <summary>Why a session cannot be started or resumed on Windows itself; null when it can.</summary>
+    /// <param name="bash">Git's bash.exe, or null when it was not found.</param>
+    /// <param name="tm">The tm in Git Bash's home.</param>
+    /// <param name="home">Git Bash's home (<see cref="GitBash.Home"/>).</param>
+    public static string? NativeProblem(string? bash, TmState tm, string home)
+    {
+        if (bash is null) return NoGitBashText;
+        string path = TmInstall.LocalPath(home);
+        return tm switch
+        {
+            TmState.Ours => null,
+            TmState.Missing => $"Could not find tm ({path}). Run install.sh in Git Bash, then try again.",
+            TmState.Unreadable => $"The tm at {path} could not be read, so TokenMojo did not run it. Check its permissions.",
+            _ => $"The tm at {path} is not cctokmon's, so install.sh left it alone and TokenMojo did not run it. "
+                + "Move it aside and run install.sh again.",
+        };
+    }
 
     /// <summary>
     /// The distro's default user when it has a ~/.claude with a tm of cctokmon's, else the first user that has one.

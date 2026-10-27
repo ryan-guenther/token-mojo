@@ -161,6 +161,12 @@ printf '%s\n\n' "──────────────────"
 
 ok "Bash ${BASH_VERSION}"
 
+# winget installs jq into its links dir and adds that to the user PATH, which a shell opened
+# before the install predates. Looking there first also lets a re-run find an earlier install.
+if [[ "$IS_WINDOWS" -eq 1 && -n "${LOCALAPPDATA:-}" ]]; then
+    PATH="$PATH:$(cygpath -u "$LOCALAPPDATA")/Microsoft/WinGet/Links"
+fi
+
 # Check remaining deps, collecting any that are missing
 MISSING_TOOLS=()
 
@@ -231,8 +237,6 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
             for pkg in "${PKG_LIST[@]}"; do
                 winget install --exact --id "$pkg"
             done
-            # winget adds its links dir to the user PATH, which this shell predates
-            PATH="$(cygpath -u "$LOCALAPPDATA")/Microsoft/WinGet/Links:$PATH"
             ;;
     esac
 

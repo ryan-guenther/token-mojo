@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace TokenMojo.Core;
 
-/// <param name="Folder">The Linux folder the link points at; null when it matches none of the configured ones.</param>
+/// <param name="Folder">The folder the link points at, Linux or Windows like the repositories it was found among; null when it matches none of the configured ones.</param>
 /// <param name="Worktree">The worktree name to suggest; null when the text holds no link.</param>
 /// <param name="Description">What was detected, for the launcher's hint line.</param>
 public sealed record LaunchHint(string? Folder, string? Worktree, string? Description)
@@ -16,29 +16,33 @@ public sealed record LaunchHint(string? Folder, string? Worktree, string? Descri
 /// <summary>A named remote of a git repository and its URL.</summary>
 public sealed record GitRemote(string Name, string Url);
 
-/// <summary>A git repository found on a distro: its folder as Linux sees it and its remotes, in config order.</summary>
+/// <summary>A git repository found on a distro or on Windows: its folder as the session sees it and its remotes, in config order.</summary>
 public sealed record RepoInfo(string Path, IReadOnlyList<GitRemote> Remotes);
 
 /// <summary>Reads the first Linear issue or GitHub pull request link in a prompt and suggests where to work on it.</summary>
 public static partial class LaunchHints
 {
-    public static LaunchHint From(string text, Settings settings, IReadOnlyList<RepoInfo> repos)
+    public static LaunchHint From(string text, Settings settings, IReadOnlyList<RepoInfo> repos, bool onWindows)
     {
         Match linear = LinearIssue().Match(text);
         Match pullRequest = GitHubPullRequest().Match(text);
         if (!linear.Success && !pullRequest.Success) return LaunchHint.None;
         // The first link in the text wins, whichever kind it is.
         return linear.Success && (!pullRequest.Success || linear.Index < pullRequest.Index)
-            ? ForLinear(linear, settings)
+            ? ForLinear(linear, settings, onWindows)
             : ForPullRequest(pullRequest, repos);
     }
 
-    private static LaunchHint ForLinear(Match issue, Settings settings)
+    private static LaunchHint ForLinear(Match issue, Settings settings, bool onWindows)
     {
         string team = issue.Groups[1].Value.ToUpperInvariant();
         string number = issue.Groups[2].Value;
         string worktree = $"{team.ToLowerInvariant()}-{number}";
         settings.LinearTeams.TryGetValue(team, out string? folder);
+        // A team's folder may be meant for WSL or for Windows; each target takes only its own kind. ~ and ~/x are
+        // WSL's, so Windows takes only a folder that cannot be a Linux one.
+        if (folder is not null && !(onWindows ? WindowsFolder.IsWindowsOnly(folder) : LinuxFolder.IsValid(folder)))
+            folder = null;
         return new LaunchHint(folder, worktree, Describe($"Linear issue {team}-{number}", folder, worktree));
     }
 

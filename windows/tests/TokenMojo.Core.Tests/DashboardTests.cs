@@ -193,12 +193,12 @@ public sealed class DashboardTests : IDisposable
         Assert.Equal(
             new SessionRowModel("abc-123", "proj", "proj · Opus · 5 min. ago", "$1.23", 8, "8%", Severity.Ok,
                 SessionStatus.None, "Active in the last 10 minutes", IsActive: true, IsCurrent: true,
-                Distro: null, Cwd: "/home/alice/proj", CanResume: false, User: null),
+                Distro: null, Cwd: "/home/alice/proj", User: null),
             row);
     }
 
     [Fact]
-    public void Build_SessionOnAWslSource_CarriesDistroFolderAndCanResume()
+    public void Build_SessionOnAWslSource_CarriesDistroUserAndFolder()
     {
         // Arrange
         SessionSnapshot session = new("abc-123", BridgeState.Parse(Payloads.Full), Now, Distro: "Ubuntu", User: "alice");
@@ -207,7 +207,7 @@ public sealed class DashboardTests : IDisposable
         SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
 
         // Assert
-        Assert.Equal(("Ubuntu", "alice", "/home/alice/proj", true), (row.Distro, row.User, row.Cwd, row.CanResume));
+        Assert.Equal(("Ubuntu", "alice", "/home/alice/proj"), (row.Distro, row.User, row.Cwd));
     }
 
     [Fact]

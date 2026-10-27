@@ -63,8 +63,7 @@ public partial class DashboardView : UserControl
             item.IsEnabled = item.Tag switch
             {
                 "focus" => hasWindow,
-                "resume" => row.CanResume,
-                "folder" => row.Distro is not null && row.Cwd is not null,
+                "folder" => row.Cwd is not null,
                 _ => true,
             };
         }

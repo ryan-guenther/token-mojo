@@ -108,6 +108,8 @@ public sealed class SettingsTests : IDisposable
         Assert.Null(settings.Distro);
         Assert.Equal("~", settings.DefaultFolder);
         Assert.Equal(["~"], settings.RepoRoots);
+        Assert.Equal("~", settings.WindowsDefaultFolder);
+        Assert.Equal(["~"], settings.WindowsRepoRoots);
         Assert.Empty(settings.LinearTeams);
     }
 
@@ -116,7 +118,8 @@ public sealed class SettingsTests : IDisposable
     {
         // Arrange
         string path = _temp.Write("settings.json", """
-            {"distro": "Debian", "defaultFolder": "~/my-app", "repoRoots": ["~", "/srv/code"], "linearTeams": {"ENG": "~/my-app", "OPS2": "/srv/ops"}}
+            {"distro": "Debian", "defaultFolder": "~/my-app", "repoRoots": ["~", "/srv/code"],
+             "linearTeams": {"ENG": "~/my-app", "OPS2": "/srv/ops", "WEB": "C:\\code\\web", "DOC": "~\\docs"}}
             """, DateTimeOffset.UtcNow);
 
         // Act
@@ -128,6 +131,40 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(["~", "/srv/code"], settings.RepoRoots);
         Assert.Equal("~/my-app", settings.LinearTeams["ENG"]);
         Assert.Equal("/srv/ops", settings.LinearTeams["OPS2"]);
+        Assert.Equal(@"C:\code\web", settings.LinearTeams["WEB"]);
+        Assert.Equal(@"~\docs", settings.LinearTeams["DOC"]);
+    }
+
+    [Fact]
+    public void Load_FileWithWindowsLaunchSettings_UsesThem()
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", """
+            {"distro": "Windows", "windowsDefaultFolder": "C:\\code\\my-app", "windowsRepoRoots": ["~", "D:\\src"]}
+            """, DateTimeOffset.UtcNow);
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Equal("Windows", settings.Distro);
+        Assert.Equal(@"C:\code\my-app", settings.WindowsDefaultFolder);
+        Assert.Equal(["~", @"D:\src"], settings.WindowsRepoRoots);
+    }
+
+    [Theory]
+    [InlineData("""{"windowsDefaultFolder": "/home/alice"}""")]
+    [InlineData("""{"windowsDefaultFolder": "code"}""")]
+    [InlineData("""{"windowsDefaultFolder": null}""")]
+    [InlineData("""{"windowsRepoRoots": ["~", "relative"]}""")]
+    [InlineData("""{"windowsRepoRoots": null}""")]
+    public void Load_InvalidWindowsFolder_IsAnError(string json)
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", json, DateTimeOffset.UtcNow);
+
+        // Act / Assert
+        Assert.Throws<SettingsException>(() => Settings.Load(path));
     }
 
     [Fact]

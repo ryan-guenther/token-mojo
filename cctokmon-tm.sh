@@ -45,8 +45,14 @@ new_session_id() {
         id=$(</proc/sys/kernel/random/uuid)
     elif command -v uuidgen >/dev/null 2>&1; then
         id=$(uuidgen)
+    elif [[ -r /dev/urandom ]] && command -v od >/dev/null 2>&1; then
+        # Git Bash has neither of the above: a version 4 UUID from 16 random bytes
+        local hex
+        hex=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+        id=$(printf '%s-%s-4%s-%x%s-%s' "${hex:0:8}" "${hex:8:4}" "${hex:13:3}" \
+            $(( (16#${hex:16:1} & 3) | 8 )) "${hex:17:3}" "${hex:20:12}")
     else
-        printf 'tm: cannot generate a session id: no /proc/sys/kernel/random/uuid and no uuidgen\n' >&2
+        printf 'tm: cannot generate a session id: no /proc/sys/kernel/random/uuid, uuidgen or /dev/urandom\n' >&2
         exit 1
     fi
     printf '%s' "${id,,}"

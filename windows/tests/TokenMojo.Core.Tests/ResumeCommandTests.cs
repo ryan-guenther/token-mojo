@@ -24,6 +24,51 @@ public sealed class ResumeCommandTests
     }
 
     [Fact]
+    public void BuildNative_FolderExists_OpensANewWindowThereWithGitBashResumingTheSession()
+    {
+        // Act
+        ResumeCommand command = ResumeCommand.BuildNative(NativePaths.Bash, SessionId, @"C:\code\my app", _ => true, NativePaths.Home);
+
+        // Assert
+        Assert.Equal("wt.exe", command.FileName);
+        Assert.Equal(
+            ["-w", "new", "-p", TerminalProfile.Name, "-d", @"C:\code\my app", NativePaths.Bash, "-c", $"exec ~/.local/bin/tm --resume {SessionId}"],
+            command.Arguments);
+    }
+
+    [Fact]
+    public void BuildNative_WorktreeWasRemoved_ResumesFromTheRepositoryRoot()
+    {
+        // Act
+        ResumeCommand command = ResumeCommand.BuildNative(
+            NativePaths.Bash, SessionId, @"C:\code\app\.claude\worktrees\pr-12", path => path == @"C:\code\app", NativePaths.Home);
+
+        // Assert
+        Assert.Equal(@"C:\code\app", command.Arguments[5]);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(@"C:\gone")]
+    [InlineData("/home/alice/linux-path")]
+    public void BuildNative_NoFolderLeft_OpensInTheProfile(string? cwd)
+    {
+        // Act
+        ResumeCommand command = ResumeCommand.BuildNative(NativePaths.Bash, SessionId, cwd, path => path == "/home/alice/linux-path", NativePaths.Home);
+
+        // Assert
+        Assert.Equal(NativePaths.Home, command.Arguments[5]);
+    }
+
+    [Fact]
+    public void BuildNative_NotASessionId_IsRefused()
+    {
+        // Act / Assert
+        Assert.Throws<ArgumentException>(() => ResumeCommand.BuildNative(NativePaths.Bash, "abc; rm -rf ~", @"C:\code", _ => true, NativePaths.Home));
+    }
+
+    [Fact]
     public void Build_ChecksTheFolderThroughTheDistroShare()
     {
         // Arrange

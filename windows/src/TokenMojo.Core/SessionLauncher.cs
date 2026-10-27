@@ -21,11 +21,18 @@ public static class SessionLauncher
 {
     /// <summary>Deposits the prompt file, then hands the terminal command to <paramref name="start"/>.</summary>
     /// <param name="start">Opens the terminal; whatever it throws is rethrown after the prompt file is removed.</param>
-    public static void Launch(LaunchRequest request, IPromptHandoff handoff, Action<TerminalCommand> start)
+    public static void Launch(LaunchRequest request, IPromptHandoff handoff, Action<TerminalCommand> start) =>
+        Launch(request, promptId => LaunchCommand.Build(request.Distro, request.User, request.Folder, request.Worktree, promptId), handoff, start);
+
+    /// <summary>The same for Claude Code on Windows itself: the request's folder is a full Windows path, and Git Bash runs `tm`.</summary>
+    public static void LaunchNative(LaunchRequest request, string bash, IPromptHandoff handoff, Action<TerminalCommand> start) =>
+        Launch(request, promptId => LaunchCommand.BuildNative(bash, request.Folder, request.Worktree, promptId), handoff, start);
+
+    private static void Launch(LaunchRequest request, Func<Guid?, LaunchCommand> build, IPromptHandoff handoff, Action<TerminalCommand> start)
     {
         Guid? promptId = string.IsNullOrWhiteSpace(request.Prompt) ? null : Guid.NewGuid();
         // Built first, so a request that would be refused leaves no file behind.
-        LaunchCommand command = LaunchCommand.Build(request.Distro, request.User, request.Folder, request.Worktree, promptId);
+        LaunchCommand command = build(promptId);
         if (promptId is { } id) Deposit(handoff, request, id);
         bool started = false;
         try
@@ -47,7 +54,7 @@ public static class SessionLauncher
         {
             handoff.Deposit(request.Distro, request.User, id, request.Prompt);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             TryDiscard(handoff, request, id);
             throw;
@@ -61,7 +68,7 @@ public static class SessionLauncher
         {
             handoff.Discard(request.Distro, request.User, id);
         }
-        catch (IOException e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Trace.TraceWarning("TokenMojo: cannot remove prompt file {0} in {1}: {2}", id, request.Distro, e.Message);
         }
