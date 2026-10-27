@@ -22,23 +22,27 @@ public sealed record RepoInfo(string Path, IReadOnlyList<GitRemote> Remotes);
 /// <summary>Reads the first Linear issue or GitHub pull request link in a prompt and suggests where to work on it.</summary>
 public static partial class LaunchHints
 {
-    public static LaunchHint From(string text, Settings settings, IReadOnlyList<RepoInfo> repos)
+    public static LaunchHint From(string text, Settings settings, IReadOnlyList<RepoInfo> repos, bool onWindows)
     {
         Match linear = LinearIssue().Match(text);
         Match pullRequest = GitHubPullRequest().Match(text);
         if (!linear.Success && !pullRequest.Success) return LaunchHint.None;
         // The first link in the text wins, whichever kind it is.
         return linear.Success && (!pullRequest.Success || linear.Index < pullRequest.Index)
-            ? ForLinear(linear, settings)
+            ? ForLinear(linear, settings, onWindows)
             : ForPullRequest(pullRequest, repos);
     }
 
-    private static LaunchHint ForLinear(Match issue, Settings settings)
+    private static LaunchHint ForLinear(Match issue, Settings settings, bool onWindows)
     {
         string team = issue.Groups[1].Value.ToUpperInvariant();
         string number = issue.Groups[2].Value;
         string worktree = $"{team.ToLowerInvariant()}-{number}";
         settings.LinearTeams.TryGetValue(team, out string? folder);
+        // A team's folder may be meant for WSL or for Windows; each target takes only its own kind. ~ and ~/x are
+        // WSL's, so Windows takes only a folder that cannot be a Linux one.
+        if (folder is not null && !(onWindows ? WindowsFolder.IsWindowsOnly(folder) : LinuxFolder.IsValid(folder)))
+            folder = null;
         return new LaunchHint(folder, worktree, Describe($"Linear issue {team}-{number}", folder, worktree));
     }
 

@@ -19,7 +19,7 @@ public sealed class LaunchHintsTests
     public void From_PlainText_HasNoHint()
     {
         // Act
-        LaunchHint hint = LaunchHints.From("Fix the flaky login test", Mapped, Repos);
+        LaunchHint hint = LaunchHints.From("Fix the flaky login test", Mapped, Repos, onWindows: false);
 
         // Assert
         Assert.Equal(LaunchHint.None, hint);
@@ -34,7 +34,7 @@ public sealed class LaunchHintsTests
     public void From_LinearIssueUrl_NamesTheWorktreeAfterTheIssueAndUsesTheTeamsFolder(string text)
     {
         // Act
-        LaunchHint hint = LaunchHints.From(text, Mapped, Repos);
+        LaunchHint hint = LaunchHints.From(text, Mapped, Repos, onWindows: false);
 
         // Assert
         Assert.Equal("eng-42", hint.Worktree);
@@ -46,12 +46,45 @@ public sealed class LaunchHintsTests
     public void From_LinearTeamWithoutAFolder_StillNamesTheWorktree()
     {
         // Act
-        LaunchHint hint = LaunchHints.From("https://linear.app/acme/issue/OPS-7", Mapped, Repos);
+        LaunchHint hint = LaunchHints.From("https://linear.app/acme/issue/OPS-7", Mapped, Repos, onWindows: false);
 
         // Assert
         Assert.Equal("ops-7", hint.Worktree);
         Assert.Null(hint.Folder);
         Assert.False(hint.UseWorktree);
+    }
+
+    [Theory]
+    [InlineData("~/my-app", true)]
+    [InlineData("/srv/my-app", true)]
+    [InlineData(@"C:\code\my-app", false)]
+    public void From_LinearTeamFolderOfTheOtherKind_DropsTheFolderAndLeavesTheWorktreeUnticked(string folder, bool onWindows)
+    {
+        // Arrange
+        Settings settings = new() { LinearTeams = new Dictionary<string, string> { ["ENG"] = folder } };
+
+        // Act
+        LaunchHint hint = LaunchHints.From("https://linear.app/acme/issue/ENG-42", settings, Repos, onWindows);
+
+        // Assert
+        Assert.Equal("eng-42", hint.Worktree);
+        Assert.Null(hint.Folder);
+        Assert.False(hint.UseWorktree);
+        Assert.Equal("Linear issue ENG-42: no matching folder, worktree eng-42", hint.Description);
+    }
+
+    [Fact]
+    public void From_WindowsLinearTeamFolderOnWindows_UsesTheFolder()
+    {
+        // Arrange
+        Settings settings = new() { LinearTeams = new Dictionary<string, string> { ["ENG"] = @"C:\code\my-app" } };
+
+        // Act
+        LaunchHint hint = LaunchHints.From("https://linear.app/acme/issue/ENG-42", settings, Repos, onWindows: true);
+
+        // Assert
+        Assert.Equal(@"C:\code\my-app", hint.Folder);
+        Assert.True(hint.UseWorktree);
     }
 
     [Theory]
@@ -62,7 +95,7 @@ public sealed class LaunchHintsTests
     public void From_UrlThatIsNotALinearIssue_HasNoHint(string text)
     {
         // Act / Assert
-        Assert.Equal(LaunchHint.None, LaunchHints.From(text, Mapped, Repos));
+        Assert.Equal(LaunchHint.None, LaunchHints.From(text, Mapped, Repos, onWindows: false));
     }
 
     [Theory]
@@ -72,7 +105,7 @@ public sealed class LaunchHintsTests
     public void From_GitHubPullRequestUrl_UsesTheClonedRepoAndNamesTheWorktreeAfterThePullRequest(string text)
     {
         // Act
-        LaunchHint hint = LaunchHints.From(text, Mapped, Repos);
+        LaunchHint hint = LaunchHints.From(text, Mapped, Repos, onWindows: false);
 
         // Assert
         Assert.Equal("/home/alice/widgets", hint.Folder);
@@ -94,7 +127,7 @@ public sealed class LaunchHintsTests
         IReadOnlyList<RepoInfo> repos = [WithOrigin("/home/alice/widgets", origin)];
 
         // Act
-        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos);
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos, onWindows: false);
 
         // Assert
         Assert.Equal("/home/alice/widgets", hint.Folder);
@@ -112,7 +145,7 @@ public sealed class LaunchHintsTests
         IReadOnlyList<RepoInfo> repos = [WithOrigin("/home/alice/widgets", origin)];
 
         // Act
-        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos);
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos, onWindows: false);
 
         // Assert
         Assert.Null(hint.Folder);
@@ -127,7 +160,7 @@ public sealed class LaunchHintsTests
         IReadOnlyList<RepoInfo> repos = [new("/home/alice/widgets", [])];
 
         // Act
-        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos);
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/3", Mapped, repos, onWindows: false);
 
         // Assert
         Assert.Null(hint.Folder);
@@ -142,7 +175,7 @@ public sealed class LaunchHintsTests
     public void From_GitHubUrlThatIsNotAPullRequest_HasNoHint(string text)
     {
         // Act / Assert
-        Assert.Equal(LaunchHint.None, LaunchHints.From(text, Mapped, Repos));
+        Assert.Equal(LaunchHint.None, LaunchHints.From(text, Mapped, Repos, onWindows: false));
     }
 
     [Fact]
@@ -152,7 +185,7 @@ public sealed class LaunchHintsTests
         string text = "See https://github.com/octo/widgets/pull/9 and https://linear.app/acme/issue/ENG-42";
 
         // Act
-        LaunchHint hint = LaunchHints.From(text, Mapped, Repos);
+        LaunchHint hint = LaunchHints.From(text, Mapped, Repos, onWindows: false);
 
         // Assert
         Assert.Equal("pr-9", hint.Worktree);
@@ -165,7 +198,7 @@ public sealed class LaunchHintsTests
         string text = "https://linear.app/acme/issue/ENG-42 fixed by https://github.com/octo/widgets/pull/9";
 
         // Act
-        LaunchHint hint = LaunchHints.From(text, Mapped, Repos);
+        LaunchHint hint = LaunchHints.From(text, Mapped, Repos, onWindows: false);
 
         // Assert
         Assert.Equal("eng-42", hint.Worktree);
@@ -182,7 +215,7 @@ public sealed class LaunchHintsTests
         ];
 
         // Act
-        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/1", Mapped, repos);
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/1", Mapped, repos, onWindows: false);
 
         // Assert
         Assert.Equal("/home/alice/widgets", hint.Folder);
@@ -202,7 +235,7 @@ public sealed class LaunchHintsTests
         ];
 
         // Act
-        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/7", Mapped, repos);
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/7", Mapped, repos, onWindows: false);
 
         // Assert
         Assert.Equal("/home/alice/widgets", hint.Folder);
@@ -224,7 +257,7 @@ public sealed class LaunchHintsTests
         ];
 
         // Act
-        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/7", Mapped, repos);
+        LaunchHint hint = LaunchHints.From("https://github.com/octo/widgets/pull/7", Mapped, repos, onWindows: false);
 
         // Assert
         Assert.Equal("/home/alice/widgets", hint.Folder);
@@ -234,9 +267,9 @@ public sealed class LaunchHintsTests
     public void Description_NamesWhatWasDetected()
     {
         // Act
-        LaunchHint linear = LaunchHints.From("https://linear.app/acme/issue/ENG-42", Mapped, Repos);
-        LaunchHint pullRequest = LaunchHints.From("https://github.com/octo/widgets/pull/12", Mapped, Repos);
-        LaunchHint unmatched = LaunchHints.From("https://github.com/octo/other/pull/5", Mapped, Repos);
+        LaunchHint linear = LaunchHints.From("https://linear.app/acme/issue/ENG-42", Mapped, Repos, onWindows: false);
+        LaunchHint pullRequest = LaunchHints.From("https://github.com/octo/widgets/pull/12", Mapped, Repos, onWindows: false);
+        LaunchHint unmatched = LaunchHints.From("https://github.com/octo/other/pull/5", Mapped, Repos, onWindows: false);
 
         // Assert
         Assert.Equal("Linear issue ENG-42: folder ~/my-app, worktree eng-42", linear.Description);

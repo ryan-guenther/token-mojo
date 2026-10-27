@@ -189,9 +189,6 @@ public partial class LauncherWindow : Window
 
     private bool IsValidFolder(string folder) => OnWindows ? WindowsFolder.IsValid(folder) : LinuxFolder.IsValid(folder);
 
-    // ~ and ~/x are WSL's in a setting both targets read, so Windows takes only a folder that cannot be a Linux one.
-    private bool IsHintFolder(string folder) => OnWindows ? WindowsFolder.IsWindowsOnly(folder) : LinuxFolder.IsValid(folder);
-
     private string Abbreviate(string folder) =>
         OnWindows ? WindowsFolder.Abbreviate(folder, _home!) : LinuxFolder.Abbreviate(folder, _home);
 
@@ -246,14 +243,13 @@ public partial class LauncherWindow : Window
     private void ApplyHint()
     {
         if (_settings is null) return;
-        LaunchHint hint = LaunchHints.From(PromptBox.Text, _settings, _repos);
+        LaunchHint hint = LaunchHints.From(PromptBox.Text, _settings, _repos, OnWindows);
         string[] lines = new[] { hint.Description, _userNote }.OfType<string>().ToArray();
         HintText.Text = string.Join("\n", lines);
         HintText.Visibility = lines.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         _applying = true;
-        // A Linear team's folder may be meant for WSL or for Windows; each target takes only its own kind.
         if (!_folderChosen)
-            FolderBox.Text = hint.Folder is { } folder && IsHintFolder(folder) ? Abbreviate(folder) : DefaultFolder;
+            FolderBox.Text = hint.Folder is { } folder ? Abbreviate(folder) : DefaultFolder;
         if (!_worktreeChosen)
         {
             WorktreeCheck.IsChecked = hint.UseWorktree;
