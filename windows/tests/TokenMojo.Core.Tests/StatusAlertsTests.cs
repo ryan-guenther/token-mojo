@@ -7,6 +7,7 @@ public class StatusAlertsTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 22, 12, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan LongTurn = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan Window = TimeSpan.FromHours(12);
 
     [Fact]
     public void Diff_NoBaselineYet_RaisesNothingBecauseTheFirstLoadIsOnlyABaseline()
@@ -169,7 +170,7 @@ public class StatusAlertsTests
     {
         // Arrange
         Baseline afterFirst = BaselineOf(Session("a", SessionStatus.Working));
-        Baseline afterGap = StatusAlerts.Advance(afterFirst, [], Now.AddSeconds(5), LongTurn);
+        Baseline afterGap = StatusAlerts.Advance(afterFirst, [], Now.AddSeconds(5), LongTurn, Window);
         SessionSnapshot[] current = [Session("a", SessionStatus.Ready, sinceSeconds: 100, turnSeconds: 120)];
 
         // Act
@@ -184,7 +185,7 @@ public class StatusAlertsTests
     {
         // Arrange
         SessionSnapshot[] both = [Session("a", SessionStatus.NeedsInput)];
-        Baseline afterGap = StatusAlerts.Advance(BaselineOf(both), [], Now.AddSeconds(5), LongTurn);
+        Baseline afterGap = StatusAlerts.Advance(BaselineOf(both), [], Now.AddSeconds(5), LongTurn, Window);
 
         // Act / Assert
         Assert.Empty(StatusAlerts.Diff(afterGap, both, LongTurn));
@@ -210,13 +211,26 @@ public class StatusAlertsTests
     {
         // Arrange
         Baseline baseline = BaselineOf(Session("old", SessionStatus.Working), Session("kept", SessionStatus.Working));
-        baseline = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(11), LongTurn);
+        baseline = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(11), LongTurn, Window);
 
         // Act
-        Baseline later = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(13), LongTurn);
+        Baseline later = StatusAlerts.Advance(baseline, [Session("kept", SessionStatus.Working)], Now.AddHours(13), LongTurn, Window);
 
         // Assert
         Assert.Equal(["kept"], later.Keys);
+    }
+
+    [Fact]
+    public void Advance_LongerWindow_RemembersASessionUnseenForTwelveHours()
+    {
+        // Arrange
+        Baseline baseline = StatusAlerts.Advance(null, [Session("a", SessionStatus.Working)], Now, LongTurn, TimeSpan.FromHours(24));
+
+        // Act
+        Baseline later = StatusAlerts.Advance(baseline, [], Now.AddHours(13), LongTurn, TimeSpan.FromHours(24));
+
+        // Assert
+        Assert.Equal(["a"], later.Keys);
     }
 
     [Fact]
@@ -282,7 +296,7 @@ public class StatusAlertsTests
     {
         // Arrange
         SessionSnapshot[] waiting = [Session("a", SessionStatus.NeedsInput)];
-        Baseline baseline = StatusAlerts.Advance(BaselineOf(waiting), [Session("a", SessionStatus.None)], Now.AddSeconds(5), LongTurn);
+        Baseline baseline = StatusAlerts.Advance(BaselineOf(waiting), [Session("a", SessionStatus.None)], Now.AddSeconds(5), LongTurn, Window);
 
         // Act
         IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(baseline, waiting, LongTurn);
@@ -295,7 +309,7 @@ public class StatusAlertsTests
     public void Advance_SessionFirstSeenWithNoStatus_IsRecordedAsNone()
     {
         // Act
-        Baseline baseline = StatusAlerts.Advance(null, [Session("a", SessionStatus.None)], Now, LongTurn);
+        Baseline baseline = StatusAlerts.Advance(null, [Session("a", SessionStatus.None)], Now, LongTurn, Window);
 
         // Assert
         Assert.Equal(SessionStatus.None, baseline["a"].Status);
@@ -398,8 +412,8 @@ public class StatusAlertsTests
         // Act
         Baseline seenWorking = BaselineOf(working);
         IReadOnlyList<StatusAlert> atExpiry = StatusAlerts.Diff(seenWorking, [expired], LongTurn);
-        Baseline seenExpired = StatusAlerts.Advance(seenWorking, [expired], Now, LongTurn);
-        Baseline seenReappeared = StatusAlerts.Advance(seenExpired, [reappeared], Now, LongTurn);
+        Baseline seenExpired = StatusAlerts.Advance(seenWorking, [expired], Now, LongTurn, Window);
+        Baseline seenReappeared = StatusAlerts.Advance(seenExpired, [reappeared], Now, LongTurn, Window);
         IReadOnlyList<StatusAlert> atStop = StatusAlerts.Diff(seenReappeared, [stopped], LongTurn);
 
         // Assert
@@ -412,7 +426,7 @@ public class StatusAlertsTests
     {
         // Arrange
         Baseline announced = StatusAlerts.Advance(
-            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 100)], Now, LongTurn);
+            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 100)], Now, LongTurn, Window);
         SessionSnapshot[] readyAgain = [Session("a", SessionStatus.Ready, sinceSeconds: 50, turnSeconds: 150)];
 
         // Act
@@ -427,7 +441,7 @@ public class StatusAlertsTests
     {
         // Arrange
         Baseline announced = StatusAlerts.Advance(
-            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 100)], Now, LongTurn);
+            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 100)], Now, LongTurn, Window);
         SessionSnapshot[] nextTurn = [Session("a", SessionStatus.Ready, sinceSeconds: 500, turnSeconds: 60)];
 
         // Act
@@ -442,7 +456,7 @@ public class StatusAlertsTests
     {
         // Arrange: Ready after 10 s is no alert, so it must not use up the turn's one announcement
         Baseline shortTurn = StatusAlerts.Advance(
-            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 10)], Now, LongTurn);
+            BaselineOf(Session("a", SessionStatus.Working)), [Session("a", SessionStatus.Ready, sinceSeconds: 0, turnSeconds: 10)], Now, LongTurn, Window);
         SessionSnapshot[] afterSubagent = [Session("a", SessionStatus.Ready, sinceSeconds: 100, turnSeconds: 110)];
 
         // Act
@@ -460,7 +474,7 @@ public class StatusAlertsTests
 
     private static DateTimeOffset At(long seconds) => DateTimeOffset.FromUnixTimeSeconds(seconds);
 
-    private static Baseline BaselineOf(params SessionSnapshot[] sessions) => StatusAlerts.Advance(null, sessions, Now, LongTurn);
+    private static Baseline BaselineOf(params SessionSnapshot[] sessions) => StatusAlerts.Advance(null, sessions, Now, LongTurn, Window);
 
     private static SessionSnapshot Session(
         string id, SessionStatus status, int sinceSeconds = 0, int? turnSeconds = null)

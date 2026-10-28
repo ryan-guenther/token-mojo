@@ -23,6 +23,36 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public void Load_NoFileYet_ListsTenSessionsFromTheLastTwelveHours()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "TokenMojo", "settings.json");
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Equal(TimeSpan.FromHours(12), settings.SessionWindow);
+        Assert.Equal(10, settings.SessionRows);
+        Assert.Contains("\"sessionHours\": 12", File.ReadAllText(path));
+        Assert.Contains("\"sessionRows\": 10", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Load_FileWithSessionHoursAndRows_UsesThem()
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", """{"sessionHours": 24, "sessionRows": 20}""", DateTimeOffset.UtcNow);
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Equal(TimeSpan.FromHours(24), settings.SessionWindow);
+        Assert.Equal(20, settings.SessionRows);
+    }
+
+    [Fact]
     public void Load_FileWithLongTurn_UsesIt()
     {
         // Arrange
@@ -82,6 +112,9 @@ public sealed class SettingsTests : IDisposable
     [InlineData("null")]
     [InlineData("""{"longTurnSeconds": -5}""")]
     [InlineData("""{"longTurnSeconds": "soon"}""")]
+    [InlineData("""{"sessionHours": 0}""")]
+    [InlineData("""{"sessionHours": 169}""")]
+    [InlineData("""{"sessionRows": 0}""")]
     public void Load_InvalidFile_ThrowsNamingTheFileAndLeavesItUntouched(string contents)
     {
         // Arrange

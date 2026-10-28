@@ -163,7 +163,7 @@
                 </Border>
             </UniformGrid>
 
-            <!-- Sessions from the last 12 hours -->
+            <!-- Sessions from the last sessionHours hours -->
             <Border Style="{StaticResource Card}" Visibility="{Binding Sessions, Converter={StaticResource VisibleWhen}}">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,4">
@@ -173,79 +173,82 @@
                                    VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource Glyph}" Text="&#xE8FD;" />
-                            <TextBlock Text="Sessions · last 12h" Style="{StaticResource Heading}" FontSize="12" />
+                            <TextBlock Text="{Binding Sessions.Heading}" Style="{StaticResource Heading}" FontSize="12" />
                         </StackPanel>
                     </DockPanel>
-                    <ItemsControl ItemsSource="{Binding Sessions.Rows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border CornerRadius="8" Padding="8,6" Cursor="Hand"
-                                        MouseLeftButtonDown="OnRowPress" MouseLeftButtonUp="OnRowClick" MouseLeave="OnRowLeave">
-                                    <Border.ContextMenu>
-                                        <ContextMenu Opened="OnRowMenuOpened">
-                                            <MenuItem Header="Focus" Tag="focus" Click="OnRowFocus" />
-                                            <MenuItem Header="Resume in new terminal" Tag="resume" Click="OnRowResume" />
-                                            <MenuItem Header="Open folder" Tag="folder" Click="OnRowOpenFolder" />
-                                            <MenuItem Header="Copy session ID" Click="OnRowCopyId" />
-                                        </ContextMenu>
-                                    </Border.ContextMenu>
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Background" Value="Transparent" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource CurrentRowBrush}" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Ellipse Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center">
-                                            <Ellipse.Style>
-                                                <Style TargetType="Ellipse">
-                                                    <Setter Property="Fill" Value="{DynamicResource IdleDotBrush}" />
-                                                    <Setter Property="ToolTip" Value="{Binding StatusText}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
-                                                            <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="Working">
-                                                            <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="Ready">
-                                                            <Setter Property="Fill" Value="{DynamicResource TealBrush}" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="NeedsInput">
-                                                            <Setter Property="Fill" Value="{DynamicResource CriticalBrush}" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Ellipse.Style>
-                                        </Ellipse>
-                                        <StackPanel Grid.Column="1" Margin="0,0,6,0">
-                                            <TextBlock Text="{Binding Title}" Style="{StaticResource Heading}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding Detail}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" HorizontalAlignment="Right">
-                                            <TextBlock Text="{Binding CostText}" Style="{StaticResource Digits}" FontWeight="SemiBold" FontSize="12"
-                                                       HorizontalAlignment="Right" Margin="0,0,0,4" />
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <local:CapsuleBar Width="36" Height="5" Margin="0,0,4,0" VerticalAlignment="Center"
-                                                                  Percent="{Binding ContextBarPercent}" Severity="{Binding ContextSeverity}"
-                                                                  TrackBrush="{DynamicResource TrackBrush}" />
-                                                <TextBlock Text="{Binding ContextText}" Style="{StaticResource Digits}" FontSize="10" />
+                    <!-- About ten rows; more scroll, so the flyout stays on screen -->
+                    <ScrollViewer MaxHeight="440" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Sessions.Rows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="8" Padding="8,6" Cursor="Hand"
+                                            MouseLeftButtonDown="OnRowPress" MouseLeftButtonUp="OnRowClick" MouseLeave="OnRowLeave">
+                                        <Border.ContextMenu>
+                                            <ContextMenu Opened="OnRowMenuOpened">
+                                                <MenuItem Header="Focus" Tag="focus" Click="OnRowFocus" />
+                                                <MenuItem Header="Resume in new terminal" Tag="resume" Click="OnRowResume" />
+                                                <MenuItem Header="Open folder" Tag="folder" Click="OnRowOpenFolder" />
+                                                <MenuItem Header="Copy session ID" Click="OnRowCopyId" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource CurrentRowBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Ellipse Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{DynamicResource IdleDotBrush}" />
+                                                        <Setter Property="ToolTip" Value="{Binding StatusText}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                                <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Working">
+                                                                <Setter Property="Fill" Value="{DynamicResource OkBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Ready">
+                                                                <Setter Property="Fill" Value="{DynamicResource TealBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="NeedsInput">
+                                                                <Setter Property="Fill" Value="{DynamicResource CriticalBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <StackPanel Grid.Column="1" Margin="0,0,6,0">
+                                                <TextBlock Text="{Binding Title}" Style="{StaticResource Heading}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Detail}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                                            <StackPanel Grid.Column="2" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding CostText}" Style="{StaticResource Digits}" FontWeight="SemiBold" FontSize="12"
+                                                           HorizontalAlignment="Right" Margin="0,0,0,4" />
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                    <local:CapsuleBar Width="36" Height="5" Margin="0,0,4,0" VerticalAlignment="Center"
+                                                                      Percent="{Binding ContextBarPercent}" Severity="{Binding ContextSeverity}"
+                                                                      TrackBrush="{DynamicResource TrackBrush}" />
+                                                    <TextBlock Text="{Binding ContextText}" Style="{StaticResource Digits}" FontSize="10" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </StackPanel>
             </Border>
 

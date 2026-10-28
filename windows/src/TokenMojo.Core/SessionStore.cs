@@ -18,7 +18,6 @@ public sealed record LoadedState(BridgeState State, DateTimeOffset Updated, Clau
 
 public static class SessionStore
 {
-    public static readonly TimeSpan RecentWindow = TimeSpan.FromHours(12);
     private const int EventsTailBytes = 64 * 1024;
 
     /// <summary>The newest state file across sources; rate limits are per account, so the latest write wins.</summary>
@@ -37,9 +36,9 @@ public static class SessionStore
     }
 
     // Claude Code signals no session end, so "recent" is the best proxy for "open".
-    public static IReadOnlyList<SessionSnapshot> LoadSessions(IEnumerable<ClaudeSource> sources, DateTimeOffset now)
+    public static IReadOnlyList<SessionSnapshot> LoadSessions(IEnumerable<ClaudeSource> sources, DateTimeOffset now, TimeSpan window)
     {
-        DateTimeOffset cutoff = now - RecentWindow;
+        DateTimeOffset cutoff = now - window;
         Dictionary<string, Candidate> newestById = new();
         foreach (ClaudeSource source in sources)
         {

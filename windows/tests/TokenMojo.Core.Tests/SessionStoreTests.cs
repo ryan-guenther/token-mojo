@@ -5,6 +5,7 @@ namespace TokenMojo.Core.Tests;
 public sealed class SessionStoreTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 22, 12, 0, 0, TimeSpan.Zero);
+    private static readonly TimeSpan Window = TimeSpan.FromHours(12);
     private readonly TempDir _temp = new();
 
     public void Dispose() => _temp.Dispose();
@@ -18,7 +19,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/newer.json", Payloads.ForSession("newer"), Now.AddMinutes(-1));
 
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([source], Now);
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([source], Now, Window);
 
         // Assert
         Assert.Equal(["newer", "older"], sessions.Select(s => s.Id));
@@ -32,7 +33,22 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/stale.json", Payloads.ForSession("stale"), Now.AddHours(-13));
 
         // Act / Assert
-        Assert.Empty(SessionStore.LoadSessions([source], Now));
+        Assert.Empty(SessionStore.LoadSessions([source], Now, Window));
+    }
+
+    [Fact]
+    public void LoadSessions_LongerWindow_KeepsSessionsFromEarlierInTheDay()
+    {
+        // Arrange
+        ClaudeSource source = _temp.Source("win");
+        _temp.Write("win/cctokmon-sessions/morning.json", Payloads.ForSession("morning"), Now.AddHours(-20));
+        _temp.Write("win/cctokmon-sessions/yesterday.json", Payloads.ForSession("yesterday"), Now.AddHours(-25));
+
+        // Act
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([source], Now, TimeSpan.FromHours(24));
+
+        // Assert
+        Assert.Equal(["morning"], sessions.Select(s => s.Id));
     }
 
     [Fact]
@@ -45,14 +61,14 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/good.json", Payloads.ForSession("good"), Now);
 
         // Act / Assert
-        Assert.Equal(["good"], SessionStore.LoadSessions([source], Now).Select(s => s.Id));
+        Assert.Equal(["good"], SessionStore.LoadSessions([source], Now, Window).Select(s => s.Id));
     }
 
     [Fact]
     public void LoadSessions_SessionsDirNotCreatedYet_ReturnsEmpty()
     {
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("missing")], Now);
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("missing")], Now, Window);
 
         // Assert
         Assert.Empty(sessions);
@@ -66,7 +82,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("wsl/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now.AddMinutes(-1));
 
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now);
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now, Window);
 
         // Assert
         Assert.Equal(["b", "a"], sessions.Select(s => s.Id));
@@ -81,7 +97,7 @@ public sealed class SessionStoreTests : IDisposable
         ClaudeSource distro = _temp.Source("wsl") with { Distro = "Ubuntu", User = "alice" };
 
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), distro], Now);
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), distro], Now, Window);
 
         // Assert
         Assert.Equal([("b", "Ubuntu", "alice"), ("a", null, null)], sessions.Select(s => (s.Id, s.Distro, s.User)));
@@ -96,7 +112,7 @@ public sealed class SessionStoreTests : IDisposable
         using IDisposable denied = TempDir.DenyRead(Path.Combine(_temp.Path, "wsl", "cctokmon-sessions"));
 
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now);
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now, Window);
 
         // Assert
         Assert.Equal(["a"], sessions.Select(s => s.Id));
@@ -111,7 +127,7 @@ public sealed class SessionStoreTests : IDisposable
         using IDisposable denied = TempDir.DenyRead(locked);
 
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win")], Now);
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win")], Now, Window);
 
         // Assert
         Assert.Equal(["good"], sessions.Select(s => s.Id));
@@ -129,7 +145,7 @@ public sealed class SessionStoreTests : IDisposable
             """{"t":1020,"e":"Notification","n":"permission_prompt"}""") + "\n", Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([source], Now).Single();
+        SessionSnapshot session = SessionStore.LoadSessions([source], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.NeedsInput, session.Status);
@@ -150,8 +166,8 @@ public sealed class SessionStoreTests : IDisposable
             $$"""{"t":{{start + 660}},"e":"Stop"}""") + "\n", Now);
 
         // Act
-        SessionSnapshot running = SessionStore.LoadSessions([source], Now.AddMinutes(-5)).Single();
-        SessionSnapshot expired = SessionStore.LoadSessions([source], Now).Single();
+        SessionSnapshot running = SessionStore.LoadSessions([source], Now.AddMinutes(-5), Window).Single();
+        SessionSnapshot expired = SessionStore.LoadSessions([source], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.Working, running.Status);
@@ -167,7 +183,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.None, session.Status);
@@ -183,7 +199,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/a.events", "not json\n{\"t\":\n", Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.None, session.Status);
@@ -199,7 +215,7 @@ public sealed class SessionStoreTests : IDisposable
         using IDisposable denied = TempDir.DenyRead(locked);
 
         // Act
-        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win")], Now);
+        IReadOnlyList<SessionSnapshot> sessions = SessionStore.LoadSessions([_temp.Source("win")], Now, Window);
 
         // Assert
         Assert.Equal(["b"], sessions.Select(s => s.Id));
@@ -212,7 +228,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/orphan.events", """{"t":1,"e":"SessionStart"}""" + "\n", Now);
 
         // Act / Assert
-        Assert.Empty(SessionStore.LoadSessions([_temp.Source("win")], Now));
+        Assert.Empty(SessionStore.LoadSessions([_temp.Source("win")], Now, Window));
     }
 
     [Fact]
@@ -225,7 +241,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("wsl/cctokmon-sessions/a.events", """{"t":1000,"e":"UserPromptSubmit"}""" + "\n", Now.AddMinutes(-9));
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now).Single();
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.Working, session.Status);
@@ -242,7 +258,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("wsl/cctokmon-sessions/a.events", """{"t":1000,"e":"UserPromptSubmit"}""" + "\n", Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now).Single();
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("wsl")], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.Working, session.Status);
@@ -259,7 +275,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/a.events", early + filler + last, Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.Ready, session.Status);
@@ -276,7 +292,7 @@ public sealed class SessionStoreTests : IDisposable
         _temp.Write("win/cctokmon-sessions/a.events", "GARBAGE" + ended + filler + last, Now);
 
         // Act
-        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now).Single();
+        SessionSnapshot session = SessionStore.LoadSessions([_temp.Source("win")], Now, Window).Single();
 
         // Assert
         Assert.Equal(SessionStatus.Ready, session.Status);
