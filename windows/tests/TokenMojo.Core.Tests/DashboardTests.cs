@@ -139,7 +139,7 @@ public sealed class DashboardTests : IDisposable
     public void Build_StateWrittenSecondsAgo_SaysWhenUpdated()
     {
         // Act
-        DashboardModel model = Dashboard.Build(new LoadedState(BridgeState.Parse("{}"), Now.AddSeconds(-3), Source), [], Now, WindowsHome);
+        DashboardModel model = Dashboard.Build(new LoadedState(BridgeState.Parse("{}"), Now.AddSeconds(-3), Source), [], Now, WindowsHome, new Settings());
 
         // Assert
         Assert.Equal("Updated 3 seconds ago", model.UpdatedText);
@@ -177,6 +177,35 @@ public sealed class DashboardTests : IDisposable
         // Assert
         Assert.Equal(10, list.Rows.Count);
         Assert.Equal("12 · $12.00 total", list.Summary);
+    }
+
+    [Fact]
+    public void Build_SessionRowsSetting_ListsThatManyRows()
+    {
+        // Arrange
+        List<SessionSnapshot> sessions = Enumerable.Range(0, 25).Select(i => Session($"s{i}", 1, minutesAgo: i)).ToList();
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions, new Settings { SessionRows = 20 }).Sessions!;
+
+        // Assert
+        Assert.Equal(20, list.Rows.Count);
+        Assert.Equal("25 · $25.00 total", list.Summary);
+    }
+
+    [Theory]
+    [InlineData(12, "Sessions · last 12h")]
+    [InlineData(24, "Sessions · last 24h")]
+    public void Build_SessionHoursSetting_NamesTheWindowInTheHeading(int hours, string expected)
+    {
+        // Arrange
+        SessionSnapshot[] sessions = [Session("a", 1, minutesAgo: 1)];
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions, new Settings { SessionHours = hours }).Sessions!;
+
+        // Assert
+        Assert.Equal(expected, list.Heading);
     }
 
     [Fact]
@@ -441,8 +470,8 @@ public sealed class DashboardTests : IDisposable
         Assert.Equal(expected, age);
     }
 
-    private static DashboardModel Build(BridgeState state, IReadOnlyList<SessionSnapshot>? sessions = null) =>
-        Dashboard.Build(new LoadedState(state, Now, Source), sessions ?? [], Now, WindowsHome);
+    private static DashboardModel Build(BridgeState state, IReadOnlyList<SessionSnapshot>? sessions = null, Settings? settings = null) =>
+        Dashboard.Build(new LoadedState(state, Now, Source), sessions ?? [], Now, WindowsHome, settings ?? new Settings());
 
     private static BridgeState Subscriber(double fiveHour, double sevenDay) =>
         BridgeState.Parse(Payloads.Full) with

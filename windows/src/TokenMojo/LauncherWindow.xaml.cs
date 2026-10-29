@@ -107,7 +107,7 @@ public partial class LauncherWindow : Window
         IReadOnlyList<ClaudeSource> sources = _locator.Locate();
         bool windowsHasClaude = Directory.Exists(Path.Combine(SessionControl.WindowsHome, ".claude"));
         IReadOnlyList<string> targets = LaunchTargets.Targets(running, sources, windowsHasClaude);
-        return new LauncherData(settings, targets, sources, SessionStore.LoadSessions(sources, DateTimeOffset.Now));
+        return new LauncherData(settings, targets, sources, SessionStore.LoadSessions(sources, DateTimeOffset.Now, settings.SessionWindow));
     }
 
     private bool OnWindows => _distro is { } target && LaunchTargets.IsWindows(target);

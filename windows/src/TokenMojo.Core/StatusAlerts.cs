@@ -50,12 +50,13 @@ public static class StatusAlerts
         return new AlertBalloon(title, Clip(string.Join("\n", lines), MaxTextLength));
     }
 
-    /// <summary>The baseline after a refresh: sessions missing this time are kept, so a gap does not lose what they were doing, until unseen for the recent window.</summary>
+    /// <summary>The baseline after a refresh: sessions missing this time are kept, so a gap does not lose what they were doing, until unseen for the session list's window.</summary>
     public static IReadOnlyDictionary<string, SeenStatus> Advance(
-        IReadOnlyDictionary<string, SeenStatus>? baseline, IReadOnlyList<SessionSnapshot> current, DateTimeOffset now, TimeSpan longTurn)
+        IReadOnlyDictionary<string, SeenStatus>? baseline, IReadOnlyList<SessionSnapshot> current, DateTimeOffset now, TimeSpan longTurn,
+        TimeSpan window)
     {
         Dictionary<string, SeenStatus> next = (baseline ?? new Dictionary<string, SeenStatus>())
-            .Where(entry => now - entry.Value.LastSeen < SessionStore.RecentWindow)
+            .Where(entry => now - entry.Value.LastSeen < window)
             .ToDictionary(entry => entry.Key, entry => entry.Value);
         foreach (SessionSnapshot session in current)
         {

@@ -319,7 +319,7 @@ Windows hides new tray icons under the **^** arrow beside the clock at first; dr
 
 - **The icon** is one ring for whichever of the 5-hour limit, 7-day limit and context window is highest, with that percentage inside: green under 50%, orange from 50%, red from 80%. `!` means 100% or more, and `–` means there is no data yet. A limit whose window has reset shows "Reset — awaiting update" in the dashboard until your next Claude Code interaction refreshes it.
 - **Hover** for all three gauges plus the session cost.
-- **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours. In that list the highlighted row is the current session, and the dot shows its [status](#session-status): red needs input, teal ready for your next prompt, green working, grey ended. Sessions that never reported a status show green if active in the last 10 minutes and grey otherwise. Sessions needing you are listed first.
+- **Left-click** opens the dashboard beside the taskbar; click elsewhere to close it. It shows the current session's model, name and folder, the 5-hour and 7-day rings with their reset times, the context window, cost, lines changed and tokens, and every session from the last 12 hours (`sessionHours`), the first 10 listed (`sessionRows`; a longer list scrolls). In that list the highlighted row is the current session, and the dot shows its [status](#session-status): red needs input, teal ready for your next prompt, green working, grey ended. Sessions that never reported a status show green if active in the last 10 minutes and grey otherwise. Sessions needing you are listed first.
 - **Click a session row** to bring its terminal window forward. If there is no window, an ended session is resumed in a new Windows Terminal window, and one that still looks like it is running asks first ("Resume in a new terminal anyway?"). **Right-click** a row for Focus, Resume in new terminal, Open folder (in Explorer, through the WSL share for a WSL session) and Copy session ID; items that do not apply are greyed out. After a focus or resume the flyout closes.
 - **Alerts** appear as a notification when a session needs input, and when a turn that took `longTurnSeconds` or more finishes (30 by default, see [Settings](#settings)). While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts. A notification is skipped when that session's window is already in front, and clicking one brings the session's window forward (or offers to resume it).
 - **New Session…** (the right-click menu, the dashboard menu, or the **+** in the Sessions header) opens the [launcher](#starting-a-session-from-tokenmojo).
@@ -358,6 +358,8 @@ In WSL the session runs as the distro's default user when that user has a `~/.cl
 ```json
 {
   "longTurnSeconds": 30,
+  "sessionHours": 12,
+  "sessionRows": 10,
   "distro": null,
   "defaultFolder": "~",
   "repoRoots": ["~"],
@@ -370,6 +372,8 @@ In WSL the session runs as the distro's default user when that user has a `~/.cl
 | Setting | Meaning |
 |---|---|
 | `longTurnSeconds` | How long a turn must take before finishing it raises an alert. |
+| `sessionHours` | How many hours back the session list reaches, from 1 to 168 (session files are deleted after a week). Set 24 to still see yesterday's sessions to resume. |
+| `sessionRows` | How many sessions the list shows at most. About ten fit; more scroll inside the card. |
 | `distro` | The WSL distro the launcher uses, or `"Windows"` for Claude Code on Windows itself. `null` uses the first running distro with Claude Code, else Windows; one that is not available is ignored. |
 | `defaultFolder` | The launcher's first folder in WSL. `~`, `~/...` or an absolute path. |
 | `repoRoots` | Folders whose git repositories the launcher offers in WSL, same form as `defaultFolder`. |

@@ -11,8 +11,16 @@ public sealed record Settings
 {
     private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
     private static readonly Regex TeamKey = new(@"\A[A-Z][A-Z0-9]*\z");
+    // The bridge deletes session files a week after their last write.
+    private const int MaxSessionHours = 7 * 24;
 
     public int LongTurnSeconds { get; init; } = 30;
+
+    /// <summary>How far back the session list reaches.</summary>
+    public int SessionHours { get; init; } = 12;
+
+    /// <summary>How many sessions the list shows at most; it scrolls when they do not fit.</summary>
+    public int SessionRows { get; init; } = 10;
 
     /// <summary>The WSL distro the launcher uses, or "Windows" for Claude Code on Windows itself; null is the first available.</summary>
     public string? Distro { get; init; }
@@ -32,6 +40,8 @@ public sealed record Settings
     public IReadOnlyDictionary<string, string> LinearTeams { get; init; } = new Dictionary<string, string>();
 
     public TimeSpan LongTurn => TimeSpan.FromSeconds(LongTurnSeconds);
+
+    public TimeSpan SessionWindow => TimeSpan.FromHours(SessionHours);
 
     public static Settings Load(string path)
     {
@@ -53,6 +63,9 @@ public sealed record Settings
     private void Validate()
     {
         if (LongTurnSeconds < 0) throw new JsonException("longTurnSeconds must not be negative");
+        if (SessionHours is < 1 or > MaxSessionHours)
+            throw new JsonException($"sessionHours must be from 1 to {MaxSessionHours}, since session files are deleted after a week");
+        if (SessionRows < 1) throw new JsonException("sessionRows must be at least 1");
         if (Distro is "") throw new JsonException("distro must not be empty; leave it out to use the first running distro");
         RequireFolder("defaultFolder", DefaultFolder);
         if (RepoRoots is null) throw new JsonException("repoRoots must be a list");

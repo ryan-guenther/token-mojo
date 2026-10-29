@@ -112,7 +112,7 @@ internal sealed class TrayController : IDisposable
             // Read every refresh, so fixing a broken file takes effect without a restart.
             Settings settings = Settings.Load(_settingsPath);
             LoadedState? current = SessionStore.LoadCurrent(_sources);
-            return new BridgeSnapshot(current, current is null ? [] : SessionStore.LoadSessions(_sources, now), null, settings);
+            return new BridgeSnapshot(current, current is null ? [] : SessionStore.LoadSessions(_sources, now, settings.SessionWindow), null, settings);
         }
         catch (SettingsException e)
         {
@@ -135,7 +135,8 @@ internal sealed class TrayController : IDisposable
         IReadOnlyList<StatusAlert> alerts = StatusAlerts.Diff(_alertBaseline, snapshot.Sessions, snapshot.Settings.LongTurn)
             .Where(alert => !SessionControl.IsForeground(alert.SessionId))
             .ToList();
-        _alertBaseline = StatusAlerts.Advance(_alertBaseline, snapshot.Sessions, DateTimeOffset.Now, snapshot.Settings.LongTurn);
+        _alertBaseline = StatusAlerts.Advance(
+            _alertBaseline, snapshot.Sessions, DateTimeOffset.Now, snapshot.Settings.LongTurn, snapshot.Settings.SessionWindow);
         if (alerts.Count == 0) return;
         AlertBalloon balloon = StatusAlerts.Balloon(alerts);
         // A balloon listing several sessions leads to the first.
@@ -166,7 +167,7 @@ internal sealed class TrayController : IDisposable
         else
         {
             IReadOnlyList<GlanceGauge> gauges = Gauges.Glance(current.State, now);
-            DashboardModel model = Dashboard.Build(current, snapshot.Sessions, now, _windowsHome);
+            DashboardModel model = Dashboard.Build(current, snapshot.Sessions, now, _windowsHome, snapshot.Settings!);
             _notifyIcon.Icon = TrayIcon.Render(Gauges.Worst(gauges), Theme.TaskbarUsesLightTheme, model.WaitingCount);
             _notifyIcon.Text = Gauges.Summary(gauges, current.State, model.WaitingCount);
             _flyout.View.Show(model);

@@ -20,7 +20,7 @@ public sealed record LimitRingModel(string Title, double RingPercent, string Per
 
 public sealed record ContextModel(double BarPercent, string Text, Severity Severity);
 
-public sealed record SessionListModel(string Summary, IReadOnlyList<SessionRowModel> Rows);
+public sealed record SessionListModel(string Heading, string Summary, IReadOnlyList<SessionRowModel> Rows);
 
 public sealed record SessionRowModel(
     string Id, string Title, string Detail, string CostText, double ContextBarPercent, string ContextText,
@@ -30,11 +30,10 @@ public sealed record SessionRowModel(
 /// <summary>Everything the dashboard shows, formatted as DashboardPanel in menubar/TokenMojo.swift formats it.</summary>
 public static class Dashboard
 {
-    private const int MaxSessionRows = 10;
     private static readonly Regex UnixHome = new("^(/home/[^/]+|/root)(?=/|$)");
 
     public static DashboardModel Build(
-        LoadedState current, IReadOnlyList<SessionSnapshot> sessions, DateTimeOffset now, string windowsHome)
+        LoadedState current, IReadOnlyList<SessionSnapshot> sessions, DateTimeOffset now, string windowsHome, Settings settings)
     {
         BridgeState state = current.State;
         LimitRingModel[] limits = state.RateLimits is { } rateLimits
@@ -50,7 +49,7 @@ public static class Dashboard
             $"+{state.Cost?.TotalLinesAdded ?? 0:N0} / −{state.Cost?.TotalLinesRemoved ?? 0:N0}",
             $"{state.ContextWindow?.TotalInputTokens ?? 0:N0}",
             $"{state.ContextWindow?.TotalOutputTokens ?? 0:N0}",
-            sessions.Count > 0 ? SessionList(sessions, state.SessionId, now) : null,
+            sessions.Count > 0 ? SessionList(sessions, state.SessionId, now, settings) : null,
             sessions.Count(s => s.Status is SessionStatus.NeedsInput or SessionStatus.Ready),
             $"Updated {RelativeAge(now - current.Updated, abbreviated: false)}");
     }
@@ -93,13 +92,14 @@ public static class Dashboard
         return new ContextModel(Math.Min(percent, 100), $"{Gauges.PercentText(percent)} of {size}", Gauges.SeverityOf(percent));
     }
 
-    private static SessionListModel SessionList(IReadOnlyList<SessionSnapshot> sessions, string? currentId, DateTimeOffset now)
+    private static SessionListModel SessionList(
+        IReadOnlyList<SessionSnapshot> sessions, string? currentId, DateTimeOffset now, Settings settings)
     {
         double totalCost = sessions.Sum(s => s.State.Cost?.TotalCostUsd ?? 0);
         List<SessionRowModel> rows = sessions
             .OrderBy(session => ListGroup(session.Status))
             .ThenByDescending(session => session.Updated)
-            .Take(MaxSessionRows).Select(session =>
+            .Take(settings.SessionRows).Select(session =>
         {
             BridgeState state = session.State;
             string? folder = state.Workspace?.CurrentDir is { } dir ? Gauges.FolderName(dir) : null;
@@ -119,7 +119,8 @@ public static class Dashboard
                 session.Id == currentId,
                 session.Distro, session.ResumeFolder, session.User, session.Home);
         }).ToList();
-        return new SessionListModel($"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", rows);
+        return new SessionListModel(
+            $"Sessions · last {settings.SessionHours}h", $"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", rows);
     }
 
     private static int ListGroup(SessionStatus status) => status switch
