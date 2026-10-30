@@ -9,6 +9,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Drawn by windows/tools/AppIcon.cs. -->
+    <ApplicationIcon>TokenMojo.ico</ApplicationIcon>
     <Version>0.1.0</Version>
     <!-- LibraryImport generates the DwmSetWindowAttribute marshalling. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

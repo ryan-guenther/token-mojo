@@ -31,6 +31,7 @@ windows/
   TokenMojo.Windows.slnx
   src/TokenMojo.Core/    # net10.0, no UI: bridge parsing, display rules, session loading, source discovery
   src/TokenMojo/         # net10.0-windows WPF tray app: icon, flyout, pop-out, launcher, Launch at Login
+  tools/AppIcon.cs       # draws src/TokenMojo/TokenMojo.ico, the exe's icon (dotnet run, any OS)
   tests/TokenMojo.Core.Tests/  # xUnit tests for Core (run on any OS)
 ```
 
@@ -140,5 +141,6 @@ bash windows/build.sh [target-dir]
 - Failures stay per source: a distro that stops or denies access mid-read is skipped, never allowed to blank the others or throw out of the timer tick. Bridge files are opened with `FileShare.Delete` so the bridge's `mv` can rename over a file TokenMojo is reading on Windows.
 - Tray icon: one ring for the worst gauge, drawn by the same `RingGauge.Draw` as the dashboard rings and wrapped as a PNG `.ico`; taskbar light/dark comes from `SystemUsesLightTheme`, app light/dark from `AppsUseLightTheme`.
 - `build.sh` publishes self-contained single-file without compression: compression halves the file size but roughly doubles memory, and the app runs all day.
+- The exe's icon (`ApplicationIcon`, shown in the Start menu, Explorer and Alt-Tab) is `TokenMojo.ico`: the tray ring, a three-quarter Ok-green arc on the dark theme's tile, in sizes 16 to 256. It is drawn by `windows/tools/AppIcon.cs`, a file-based app with no image library; change the drawing there and regenerate with `dotnet run windows/tools/AppIcon.cs -- windows/src/TokenMojo/TokenMojo.ico`, never by editing the `.ico`.
 - `build.sh` then writes `TokenMojo.lnk` to the user's Start menu Programs folder through `powershell.exe` (Git Bash or WSL; the exe path from `cygpath -w` or `wslpath -w`), passing the script with `-EncodedCommand` so no path needs shell quoting. Without either converter or `powershell.exe` it says so and skips the shortcut. `uninstall.sh` does not touch the Windows app, so it leaves the shortcut too.
 - C# style is enforced by `windows/.editorconfig` with `EnforceCodeStyleInBuild` and warnings as errors: explicit types, never `var` (`IDE0008`); `new()` when the type is already written (`IDE0090`).
