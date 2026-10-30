@@ -175,7 +175,7 @@ public sealed class DashboardTests : IDisposable
         SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
 
         // Assert
-        Assert.Equal(10, list.Rows.Count);
+        Assert.Equal(10, list.OpenRows.Count + list.ClosedRows.Count);
         Assert.Equal("12 · $12.00 total", list.Summary);
     }
 
@@ -189,7 +189,7 @@ public sealed class DashboardTests : IDisposable
         SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions, new Settings { SessionRows = 20 }).Sessions!;
 
         // Assert
-        Assert.Equal(20, list.Rows.Count);
+        Assert.Equal(20, list.OpenRows.Count + list.ClosedRows.Count);
         Assert.Equal("25 · $25.00 total", list.Summary);
     }
 
@@ -216,7 +216,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = new("abc-123", state, Now.AddMinutes(-5));
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal(
@@ -233,7 +233,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = new("abc-123", BridgeState.Parse(Payloads.Full), Now, Distro: "Ubuntu", User: "alice");
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal(("Ubuntu", "alice", "/home/alice/proj"), (row.Distro, row.User, row.Cwd));
@@ -250,7 +250,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = new("abc-123", state, Now, Distro: "Ubuntu");
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal("/home/alice/proj", row.Cwd);
@@ -264,7 +264,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = new("abc-123", state, Now, Distro: "Ubuntu");
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal("/home/alice/proj/sub", row.Cwd);
@@ -277,19 +277,18 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = Session("abc-123", 1, minutesAgo: 1) with { Distro = "Ubuntu" };
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Null(row.Cwd);
     }
 
     [Fact]
-    public void Build_SessionsWithMixedStatuses_ListsNeedsInputThenReadyThenWorkingThenNoStatusThenEnded()
+    public void Build_OpenSessionsWithMixedStatuses_ListsNeedsInputThenReadyThenWorkingThenNoStatus()
     {
         // Arrange
         SessionSnapshot[] sessions =
         [
-            Session("ended", 1, minutesAgo: 1) with { Status = SessionStatus.Ended },
             Session("none", 1, minutesAgo: 2),
             Session("working", 1, minutesAgo: 3) with { Status = SessionStatus.Working },
             Session("ready", 1, minutesAgo: 4) with { Status = SessionStatus.Ready },
@@ -300,7 +299,90 @@ public sealed class DashboardTests : IDisposable
         SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
 
         // Assert
-        Assert.Equal(["needs", "ready", "working", "none", "ended"], list.Rows.Select(r => r.Id));
+        Assert.Equal(["needs", "ready", "working", "none"], list.OpenRows.Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Build_EndedAndIdleSessions_ListsThemApartFromOpenOnes()
+    {
+        // Arrange
+        SessionSnapshot[] sessions =
+        [
+            Session("ended", 1, minutesAgo: 1) with { Status = SessionStatus.Ended },
+            Session("idle", 1, minutesAgo: 30),
+            Session("active", 1, minutesAgo: 2),
+            Session("ready", 1, minutesAgo: 40) with { Status = SessionStatus.Ready },
+        ];
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
+
+        // Assert
+        Assert.Equal(["ready", "active"], list.OpenRows.Select(r => r.Id));
+        Assert.Equal(["ended", "idle"], list.ClosedRows.Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Build_ClosedSessions_ListsTheMostRecentlyClosedFirst()
+    {
+        // Arrange
+        SessionSnapshot[] sessions =
+        [
+            Session("closed-earlier", 1, minutesAgo: 5) with { Status = SessionStatus.Ended, StatusSince = Now.AddMinutes(-5) },
+            Session("idle", 1, minutesAgo: 20),
+            Session("left-idle-then-closed", 1, minutesAgo: 60) with { Status = SessionStatus.Ended, StatusSince = Now.AddMinutes(-1) },
+        ];
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
+
+        // Assert
+        Assert.Equal(["left-idle-then-closed", "closed-earlier", "idle"], list.ClosedRows.Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Build_EndedSession_DatesTheRowByWhenItEnded()
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo: 60) with { Status = SessionStatus.Ended, StatusSince = Now.AddMinutes(-2) };
+
+        // Act
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
+
+        // Assert
+        Assert.EndsWith("2 min. ago", row.Detail);
+    }
+
+    [Fact]
+    public void Build_OpenSessionsFillingTheRows_ListsNoClosedOnes()
+    {
+        // Arrange
+        List<SessionSnapshot> sessions = Enumerable.Range(0, 3)
+            .Select(i => Session($"open{i}", 1, minutesAgo: i) with { Status = SessionStatus.Ready }).ToList();
+        sessions.Add(Session("ended", 1, minutesAgo: 0) with { Status = SessionStatus.Ended, StatusSince = Now });
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions, new Settings { SessionRows = 3 }).Sessions!;
+
+        // Assert
+        Assert.Equal(3, list.OpenRows.Count);
+        Assert.Empty(list.ClosedRows);
+    }
+
+    [Fact]
+    public void Build_FewerOpenSessionsThanRows_FillsTheRestWithClosedOnes()
+    {
+        // Arrange
+        List<SessionSnapshot> sessions = Enumerable.Range(0, 3)
+            .Select(i => Session($"ended{i}", 1, minutesAgo: i) with { Status = SessionStatus.Ended }).ToList();
+        sessions.Add(Session("open", 1, minutesAgo: 0) with { Status = SessionStatus.Working });
+
+        // Act
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions, new Settings { SessionRows = 3 }).Sessions!;
+
+        // Assert
+        Assert.Equal(["open"], list.OpenRows.Select(r => r.Id));
+        Assert.Equal(["ended0", "ended1"], list.ClosedRows.Select(r => r.Id));
     }
 
     [Fact]
@@ -317,7 +399,7 @@ public sealed class DashboardTests : IDisposable
         SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
 
         // Assert
-        Assert.Equal(["newer", "older"], list.Rows.Select(r => r.Id));
+        Assert.Equal(["newer", "older"], list.OpenRows.Select(r => r.Id));
     }
 
     [Fact]
@@ -331,8 +413,8 @@ public sealed class DashboardTests : IDisposable
         SessionListModel list = Build(BridgeState.Parse(Payloads.Full), sessions).Sessions!;
 
         // Assert
-        Assert.Equal("needs", list.Rows[0].Id);
-        Assert.Equal(10, list.Rows.Count);
+        Assert.Equal("needs", list.OpenRows[0].Id);
+        Assert.Equal(10, list.OpenRows.Count + list.ClosedRows.Count);
     }
 
     [Theory]
@@ -346,7 +428,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = status };
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal(status, row.Status);
@@ -362,7 +444,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = SessionStatus.Working, Subagents = subagents };
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal(expected, row.StatusText);
@@ -375,7 +457,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = SessionStatus.NeedsInput, Subagents = 2 };
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal("Needs input", row.StatusText);
@@ -390,7 +472,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = Session("a", 1, minutesAgo);
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal(SessionStatus.None, row.Status);
@@ -404,7 +486,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = Session("a", 1, minutesAgo: 1) with { Status = SessionStatus.Ended };
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.False(row.IsActive);
@@ -441,7 +523,7 @@ public sealed class DashboardTests : IDisposable
         SessionSnapshot session = new("x", BridgeState.Parse("{}"), Now.AddMinutes(-20));
 
         // Act
-        SessionRowModel row = Build(BridgeState.Parse(Payloads.Full), [session]).Sessions!.Rows[0];
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
 
         // Assert
         Assert.Equal("Session", row.Title);
@@ -472,6 +554,9 @@ public sealed class DashboardTests : IDisposable
 
     private static DashboardModel Build(BridgeState state, IReadOnlyList<SessionSnapshot>? sessions = null, Settings? settings = null) =>
         Dashboard.Build(new LoadedState(state, Now, Source), sessions ?? [], Now, WindowsHome, settings ?? new Settings());
+
+    private static SessionRowModel OnlyRow(DashboardModel model) =>
+        Assert.Single(model.Sessions!.OpenRows.Concat(model.Sessions.ClosedRows));
 
     private static BridgeState Subscriber(double fiveHour, double sevenDay) =>
         BridgeState.Parse(Payloads.Full) with
