@@ -20,7 +20,8 @@ public sealed record LimitRingModel(string Title, double RingPercent, string Per
 
 public sealed record ContextModel(double BarPercent, string Text, Severity Severity);
 
-public sealed record SessionListModel(string Heading, string Summary, IReadOnlyList<SessionRowModel> Rows);
+public sealed record SessionListModel(
+    string Heading, string Summary, IReadOnlyList<SessionRowModel> OpenRows, IReadOnlyList<SessionRowModel> ClosedRows);
 
 public sealed record SessionRowModel(
     string Id, string Title, string Detail, string CostText, double ContextBarPercent, string ContextText,
@@ -96,40 +97,56 @@ public static class Dashboard
         IReadOnlyList<SessionSnapshot> sessions, string? currentId, DateTimeOffset now, Settings settings)
     {
         double totalCost = sessions.Sum(s => s.State.Cost?.TotalCostUsd ?? 0);
-        List<SessionRowModel> rows = sessions
+        ILookup<bool, SessionSnapshot> byClosed = sessions.ToLookup(session => IsClosed(session, now));
+        // Open sessions fill the rows first; closed ones take what is left.
+        List<SessionRowModel> openRows = byClosed[false]
             .OrderBy(session => ListGroup(session.Status))
             .ThenByDescending(session => session.Updated)
-            .Take(settings.SessionRows).Select(session =>
-        {
-            BridgeState state = session.State;
-            string? folder = state.Workspace?.CurrentDir is { } dir ? Gauges.FolderName(dir) : null;
-            double context = state.ContextWindow?.UsedPercentage ?? 0;
-            string?[] details = [folder, state.Model?.DisplayName, RelativeAge(now - session.Updated, abbreviated: true)];
-            return new SessionRowModel(
-                session.Id,
-                SessionTitle(state),
-                string.Join(" · ", details.OfType<string>()),
-                Gauges.CostText(state.Cost?.TotalCostUsd, 2),
-                Math.Min(context, 100),
-                Gauges.PercentText(context),
-                Gauges.SeverityOf(context),
-                session.Status,
-                StatusText(session, now),
-                session.Status == SessionStatus.None && session.IsActive(now),
-                session.Id == currentId,
-                session.Distro, session.ResumeFolder, session.User, session.Home);
-        }).ToList();
+            .Take(settings.SessionRows)
+            .Select(session => Row(session, currentId, now)).ToList();
+        List<SessionRowModel> closedRows = byClosed[true]
+            .OrderByDescending(LastOpen)
+            .Take(settings.SessionRows - openRows.Count)
+            .Select(session => Row(session, currentId, now)).ToList();
         return new SessionListModel(
-            $"Sessions · last {settings.SessionHours}h", $"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", rows);
+            $"Sessions · last {settings.SessionHours}h", $"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", openRows, closedRows);
     }
+
+    private static SessionRowModel Row(SessionSnapshot session, string? currentId, DateTimeOffset now)
+    {
+        BridgeState state = session.State;
+        string? folder = state.Workspace?.CurrentDir is { } dir ? Gauges.FolderName(dir) : null;
+        double context = state.ContextWindow?.UsedPercentage ?? 0;
+        string?[] details = [folder, state.Model?.DisplayName, RelativeAge(now - LastOpen(session), abbreviated: true)];
+        return new SessionRowModel(
+            session.Id,
+            SessionTitle(state),
+            string.Join(" · ", details.OfType<string>()),
+            Gauges.CostText(state.Cost?.TotalCostUsd, 2),
+            Math.Min(context, 100),
+            Gauges.PercentText(context),
+            Gauges.SeverityOf(context),
+            session.Status,
+            StatusText(session, now),
+            session.Status == SessionStatus.None && session.IsActive(now),
+            session.Id == currentId,
+            session.Distro, session.ResumeFolder, session.User, session.Home);
+    }
+
+    // A session without hooks never reports its end, so once idle it is taken as closed.
+    private static bool IsClosed(SessionSnapshot session, DateTimeOffset now) =>
+        session.Status == SessionStatus.Ended || (session.Status == SessionStatus.None && !session.IsActive(now));
+
+    // An ended session was last open when it ended, not at its last bridge write.
+    private static DateTimeOffset LastOpen(SessionSnapshot session) =>
+        session.Status == SessionStatus.Ended ? session.StatusSince ?? session.Updated : session.Updated;
 
     private static int ListGroup(SessionStatus status) => status switch
     {
         SessionStatus.NeedsInput => 0,
         SessionStatus.Ready => 1,
         SessionStatus.Working => 2,
-        SessionStatus.None => 3,
-        _ => 4,
+        _ => 3,
     };
 
     // A session with no status file falls back to activity in the last 10 minutes.
