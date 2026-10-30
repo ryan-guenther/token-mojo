@@ -311,6 +311,8 @@ bash windows/build.sh "/mnt/c/Users/<you>/AppData/Local/Programs/TokenMojo"
 "/mnt/c/Users/<you>/AppData/Local/Programs/TokenMojo/TokenMojo.exe" &
 ```
 
+Either way, `build.sh` also adds a **TokenMojo** shortcut to the Start menu (written with PowerShell, so it is skipped when building on a machine without Windows).
+
 Quit TokenMojo before re-running `build.sh` after pulling updates.
 
 ### Using it
