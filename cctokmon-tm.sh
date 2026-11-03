@@ -135,7 +135,8 @@ fi
 session_id=$(new_session_id)
 set_title "TM $name ${session_id:0:8}"
 
-claude_args=(--session-id "$session_id" -n "$name")
+# No -n: a named session gets no generated title, so every session in a folder would share its name.
+claude_args=(--session-id "$session_id")
 if [[ -n "$worktree" ]]; then claude_args+=(-w "$worktree"); fi
 if [[ -n "$prompt" ]]; then
     claude_args+=(-- "$prompt")
