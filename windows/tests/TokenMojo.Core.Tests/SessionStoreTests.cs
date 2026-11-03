@@ -26,6 +26,54 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadSessions_UnnamedSession_TakesItsFirstPromptFromTheTranscriptBesideTheSource()
+    {
+        // Arrange
+        ClaudeSource source = _temp.Source("win");
+        _temp.Write("win/cctokmon-sessions/s1.json",
+            """{"session_id":"s1","transcript_path":"/home/alice/.claude/projects/-home-alice-proj/s1.jsonl"}""", Now);
+        _temp.Write("win/projects/-home-alice-proj/s1.jsonl",
+            """{"type":"user","message":{"role":"user","content":"Fix the login redirect"}}""", Now);
+
+        // Act
+        SessionSnapshot session = Assert.Single(SessionStore.LoadSessions([source], Now, Window));
+
+        // Assert
+        Assert.Equal("Fix the login redirect", session.FirstPrompt);
+    }
+
+    [Fact]
+    public void LoadSessions_NamedSession_LeavesTheTranscriptUnread()
+    {
+        // Arrange
+        ClaudeSource source = _temp.Source("win");
+        _temp.Write("win/cctokmon-sessions/s2.json",
+            """{"session_id":"s2","session_name":"login fix","transcript_path":"C:\\Users\\alice\\.claude\\projects\\p\\s2.jsonl"}""", Now);
+        _temp.Write("win/projects/p/s2.jsonl", """{"type":"user","message":{"role":"user","content":"Fix it"}}""", Now);
+
+        // Act
+        SessionSnapshot session = Assert.Single(SessionStore.LoadSessions([source], Now, Window));
+
+        // Assert
+        Assert.Null(session.FirstPrompt);
+    }
+
+    [Fact]
+    public void LoadSessions_TranscriptNotWrittenYet_HasNoFirstPrompt()
+    {
+        // Arrange
+        ClaudeSource source = _temp.Source("win");
+        _temp.Write("win/cctokmon-sessions/s3.json",
+            """{"session_id":"s3","transcript_path":"/home/alice/.claude/projects/p/s3.jsonl"}""", Now);
+
+        // Act
+        SessionSnapshot session = Assert.Single(SessionStore.LoadSessions([source], Now, Window));
+
+        // Assert
+        Assert.Null(session.FirstPrompt);
+    }
+
+    [Fact]
     public void LoadSessions_SessionOlderThanTwelveHours_IsLeftOut()
     {
         // Arrange

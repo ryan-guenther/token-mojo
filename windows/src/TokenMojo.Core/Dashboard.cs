@@ -58,8 +58,10 @@ public static class Dashboard
             $"Updated {RelativeAge(now - current.Updated, abbreviated: false)}");
     }
 
-    public static string SessionTitle(BridgeState state) =>
-        state.SessionName ?? (state.Workspace?.CurrentDir is { } dir ? Gauges.FolderName(dir) : null) ?? "Session";
+    /// <summary>Claude Code's name for the session, else its first prompt, else its folder.</summary>
+    public static string SessionTitle(SessionSnapshot session) =>
+        session.State.SessionName ?? session.FirstPrompt
+        ?? (session.State.Workspace?.CurrentDir is { } dir ? Gauges.FolderName(dir) : null) ?? "Session";
 
     // Mirrors RelativeDateTimeFormatter's English wording, full and abbreviated.
     public static string RelativeAge(TimeSpan age, bool abbreviated)
@@ -123,7 +125,7 @@ public static class Dashboard
         string?[] details = [folder, state.Model?.DisplayName, RelativeAge(now - LastOpen(session), abbreviated: true)];
         return new SessionRowModel(
             session.Id,
-            SessionTitle(state),
+            SessionTitle(session),
             string.Join(" · ", details.OfType<string>()),
             Tooltip(session, now),
             Gauges.CostText(state.Cost?.TotalCostUsd, 2),
@@ -147,7 +149,7 @@ public static class Dashboard
             : StatusText(session, now);
         string?[] lines =
         [
-            SessionTitle(state),
+            SessionTitle(session),
             folder is null ? null : $"Folder: {folder}",
             $"Status: {status}",
             state.Model?.DisplayName is { } model ? $"Model: {model}" : null,

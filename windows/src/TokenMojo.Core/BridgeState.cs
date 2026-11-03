@@ -10,7 +10,8 @@ public sealed record BridgeState(
     BridgeWorkspace? Workspace,
     BridgeCost? Cost,
     BridgeContextWindow? ContextWindow,
-    BridgeRateLimits? RateLimits)
+    BridgeRateLimits? RateLimits,
+    string? TranscriptPath = null)
 {
     private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 

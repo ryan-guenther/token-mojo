@@ -5,7 +5,7 @@ namespace TokenMojo.Core;
 public sealed record SessionSnapshot(
     string Id, BridgeState State, DateTimeOffset Updated,
     SessionStatus Status = SessionStatus.None, DateTimeOffset? StatusSince = null, DateTimeOffset? TurnStarted = null,
-    string? Distro = null, string? User = null, string? Home = null, int Subagents = 0)
+    string? Distro = null, string? User = null, string? Home = null, int Subagents = 0, string? FirstPrompt = null)
 {
     /// <summary>The folder to resume or open: where Claude was started, else where it is now.</summary>
     public string? ResumeFolder =>
@@ -72,7 +72,7 @@ public static class SessionStore
                     new SessionSnapshot(
                         Path.GetFileNameWithoutExtension(file.Name), state, updated,
                         events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted, source.Distro, source.User, source.Home,
-                        events?.Subagents ?? 0),
+                        events?.Subagents ?? 0, FirstPrompt(source, state)),
                     eventsWritten));
             }
         }
@@ -83,6 +83,10 @@ public static class SessionStore
         }
         return sessions;
     }
+
+    // Only read for a session Claude Code has not named, since its name wins anyway.
+    private static string? FirstPrompt(ClaudeSource source, BridgeState state) =>
+        state.SessionName is null && state.TranscriptPath is { } transcript ? TranscriptTitle.For(source, transcript) : null;
 
     private static BridgeState? TryRead(FileInfo file)
     {

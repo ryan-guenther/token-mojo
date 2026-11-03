@@ -30,10 +30,10 @@ public static class StatusAlerts
             bool changed = previous is null || previous.Status != session.Status || previous.Since != session.StatusSince;
             if (!changed) continue;
             if (session.Status == SessionStatus.NeedsInput)
-                alerts.Add(new StatusAlert(session.Id, StatusAlertKind.NeedsInput, Dashboard.SessionTitle(session.State), "Needs input"));
+                alerts.Add(new StatusAlert(session.Id, StatusAlertKind.NeedsInput, Dashboard.SessionTitle(session), "Needs input"));
             else if (previous is not null && session.Status == SessionStatus.Ready && FinishedLongTurn(session, longTurn)
                 && session.TurnStarted != previous.FinishedTurn)
-                alerts.Add(new StatusAlert(session.Id, StatusAlertKind.TurnFinished, Dashboard.SessionTitle(session.State), "Finished"));
+                alerts.Add(new StatusAlert(session.Id, StatusAlertKind.TurnFinished, Dashboard.SessionTitle(session), "Finished"));
         }
         return alerts;
     }
