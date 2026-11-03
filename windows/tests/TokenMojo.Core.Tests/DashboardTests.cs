@@ -146,13 +146,15 @@ public sealed class DashboardTests : IDisposable
     }
 
     [Fact]
-    public void Build_NoRecentSessions_HidesSessionList()
+    public void Build_NoRecentSessions_KeepsAnEmptySessionList()
     {
         // Act
-        DashboardModel model = Build(BridgeState.Parse(Payloads.Full));
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full)).Sessions;
 
         // Assert
-        Assert.Null(model.Sessions);
+        Assert.True(list.IsEmpty);
+        Assert.Equal("Sessions · last 12h", list.Heading);
+        Assert.Equal("", list.Summary);
     }
 
     [Fact]

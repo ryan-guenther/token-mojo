@@ -12,7 +12,7 @@ public sealed record DashboardModel(
     string LinesText,
     string InputTokensText,
     string OutputTokensText,
-    SessionListModel? Sessions,
+    SessionListModel Sessions,
     int WaitingCount,
     string UpdatedText);
 
@@ -21,7 +21,10 @@ public sealed record LimitRingModel(string Title, double RingPercent, string Per
 public sealed record ContextModel(double BarPercent, string Text, Severity Severity);
 
 public sealed record SessionListModel(
-    string Heading, string Summary, IReadOnlyList<SessionRowModel> OpenRows, IReadOnlyList<SessionRowModel> ClosedRows);
+    string Heading, string Summary, IReadOnlyList<SessionRowModel> OpenRows, IReadOnlyList<SessionRowModel> ClosedRows)
+{
+    public bool IsEmpty => OpenRows.Count == 0 && ClosedRows.Count == 0;
+}
 
 public sealed record SessionRowModel(
     string Id, string Title, string Detail, string CostText, double ContextBarPercent, string ContextText,
@@ -50,7 +53,7 @@ public static class Dashboard
             $"+{state.Cost?.TotalLinesAdded ?? 0:N0} / −{state.Cost?.TotalLinesRemoved ?? 0:N0}",
             $"{state.ContextWindow?.TotalInputTokens ?? 0:N0}",
             $"{state.ContextWindow?.TotalOutputTokens ?? 0:N0}",
-            sessions.Count > 0 ? SessionList(sessions, state.SessionId, now, settings) : null,
+            SessionList(sessions, state.SessionId, now, settings),
             sessions.Count(s => s.Status is SessionStatus.NeedsInput or SessionStatus.Ready),
             $"Updated {RelativeAge(now - current.Updated, abbreviated: false)}");
     }
@@ -108,8 +111,8 @@ public static class Dashboard
             .OrderByDescending(LastOpen)
             .Take(settings.SessionRows - openRows.Count)
             .Select(session => Row(session, currentId, now)).ToList();
-        return new SessionListModel(
-            $"Sessions · last {settings.SessionHours}h", $"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total", openRows, closedRows);
+        string summary = sessions.Count > 0 ? $"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total" : "";
+        return new SessionListModel($"Sessions · last {settings.SessionHours}h", summary, openRows, closedRows);
     }
 
     private static SessionRowModel Row(SessionSnapshot session, string? currentId, DateTimeOffset now)

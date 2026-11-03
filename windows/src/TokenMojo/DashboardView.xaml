@@ -231,7 +231,7 @@
             </UniformGrid>
 
             <!-- Sessions from the last sessionHours hours -->
-            <Border Style="{StaticResource Card}" Visibility="{Binding Sessions, Converter={StaticResource VisibleWhen}}">
+            <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,4">
                         <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE710;" Margin="6,0,0,0"
@@ -279,6 +279,8 @@
                             </Style>
                         </ScrollViewer.Resources>
                         <StackPanel>
+                            <TextBlock Text="No sessions" Style="{StaticResource Secondary}" Margin="8,4,0,4"
+                                       Visibility="{Binding Sessions.IsEmpty, Converter={StaticResource VisibleWhen}}" />
                             <ItemsControl ItemsSource="{Binding Sessions.OpenRows}" ItemTemplate="{StaticResource SessionRow}" />
                             <TextBlock Text="Closed" Style="{StaticResource Secondary}" Margin="8,8,0,2"
                                        Visibility="{Binding Sessions.ClosedRows, Converter={StaticResource VisibleWhen}}" />
