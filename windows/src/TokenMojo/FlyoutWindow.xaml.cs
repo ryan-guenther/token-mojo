@@ -24,6 +24,8 @@ public partial class FlyoutWindow : Window
 
     public event EventHandler? NewSessionRequested;
 
+    public event EventHandler? SettingsRequested;
+
     public DashboardView View => Dashboard;
 
     public void Toggle()
@@ -86,6 +88,12 @@ public partial class FlyoutWindow : Window
     {
         StartupRegistration.Toggle();
         LaunchAtLoginCheck.Visibility = StartupRegistration.IsEnabled ? Visibility.Visible : Visibility.Hidden;
+    }
+
+    private void OnSettings(object sender, RoutedEventArgs e)
+    {
+        HideFlyout();
+        SettingsRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnQuit(object sender, RoutedEventArgs e) => Application.Current.Shutdown();

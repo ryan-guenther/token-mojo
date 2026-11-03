@@ -39,6 +39,7 @@
                     <TextBlock Text="Launch at Login" Width="290" />
                 </DockPanel>
             </Button>
+            <Button Style="{StaticResource MenuButton}" Content="Settings…" Click="OnSettings" />
             <Button Style="{StaticResource MenuButton}" Content="Quit" Click="OnQuit" />
         </StackPanel>
     </StackPanel>
