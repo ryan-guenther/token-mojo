@@ -27,7 +27,7 @@ public sealed record SessionListModel(
 }
 
 public sealed record SessionRowModel(
-    string Id, string Title, string Detail, string CostText, double ContextBarPercent, string ContextText,
+    string Id, string Title, string Detail, string Tooltip, string CostText, double ContextBarPercent, string ContextText,
     Severity ContextSeverity, SessionStatus Status, string StatusText, bool IsActive, bool IsCurrent,
     string? Distro, string? Cwd, string? User, string? Home = null);
 
@@ -125,6 +125,7 @@ public static class Dashboard
             session.Id,
             SessionTitle(state),
             string.Join(" · ", details.OfType<string>()),
+            Tooltip(session, now),
             Gauges.CostText(state.Cost?.TotalCostUsd, 2),
             Math.Min(context, 100),
             Gauges.PercentText(context),
@@ -134,6 +135,29 @@ public static class Dashboard
             session.Status == SessionStatus.None && session.IsActive(now),
             session.Id == currentId,
             session.Distro, session.ResumeFolder, session.User, session.Home);
+    }
+
+    // Everything the row truncates or leaves out, one fact per line; a line whose data is missing is left out.
+    private static string Tooltip(SessionSnapshot session, DateTimeOffset now)
+    {
+        BridgeState state = session.State;
+        string? folder = state.Workspace?.CurrentDir is { } dir ? (session.Distro is { } distro ? $"{dir} ({distro})" : dir) : null;
+        string status = session.StatusSince is { } since
+            ? $"{StatusText(session, now)}, {RelativeAge(now - since, abbreviated: false)}"
+            : StatusText(session, now);
+        string?[] lines =
+        [
+            SessionTitle(state),
+            folder is null ? null : $"Folder: {folder}",
+            $"Status: {status}",
+            state.Model?.DisplayName is { } model ? $"Model: {model}" : null,
+            $"Cost: {Gauges.CostText(state.Cost?.TotalCostUsd, 2)} · +{state.Cost?.TotalLinesAdded ?? 0:N0} / −{state.Cost?.TotalLinesRemoved ?? 0:N0} lines",
+            $"Context: {Gauges.PercentText(state.ContextWindow?.UsedPercentage ?? 0)} · " +
+                $"{state.ContextWindow?.TotalInputTokens ?? 0:N0} in / {state.ContextWindow?.TotalOutputTokens ?? 0:N0} out tokens",
+            $"Session: {session.Id[..Math.Min(8, session.Id.Length)]}",
+            $"Last update: {RelativeAge(now - session.Updated, abbreviated: false)}",
+        ];
+        return string.Join("\n", lines.OfType<string>());
     }
 
     // A session without hooks never reports its end, so once idle it is taken as closed.

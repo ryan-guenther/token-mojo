@@ -98,7 +98,7 @@
                             </Style>
                         </Ellipse.Style>
                     </Ellipse>
-                    <StackPanel Grid.Column="1" Margin="0,0,6,0">
+                    <StackPanel Grid.Column="1" Margin="0,0,6,0" ToolTip="{Binding Tooltip}">
                         <TextBlock Text="{Binding Title}" Style="{StaticResource Heading}" FontSize="12" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding Detail}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
