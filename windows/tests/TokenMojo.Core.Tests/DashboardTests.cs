@@ -231,6 +231,23 @@ public sealed class DashboardTests : IDisposable
             row);
     }
 
+    [Theory]
+    [InlineData("my-session", "Fix the login redirect", "my-session")]
+    [InlineData(null, "Fix the login redirect", "Fix the login redirect")]
+    [InlineData(null, null, "proj")]
+    public void Build_SessionRowTitle_PrefersTheNameThenTheFirstPromptThenTheFolder(string? name, string? prompt, string expected)
+    {
+        // Arrange
+        BridgeState state = BridgeState.Parse(Payloads.Full) with { SessionName = name };
+        SessionSnapshot session = new("abc-123", state, Now, FirstPrompt: prompt);
+
+        // Act
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
+
+        // Assert
+        Assert.Equal(expected, row.Title);
+    }
+
     [Fact]
     public void Build_SessionRowTooltip_NamesDistroStatusAgeAndShortId()
     {
