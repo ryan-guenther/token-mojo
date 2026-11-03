@@ -146,13 +146,15 @@ public sealed class DashboardTests : IDisposable
     }
 
     [Fact]
-    public void Build_NoRecentSessions_HidesSessionList()
+    public void Build_NoRecentSessions_KeepsAnEmptySessionList()
     {
         // Act
-        DashboardModel model = Build(BridgeState.Parse(Payloads.Full));
+        SessionListModel list = Build(BridgeState.Parse(Payloads.Full)).Sessions;
 
         // Assert
-        Assert.Null(model.Sessions);
+        Assert.True(list.IsEmpty);
+        Assert.Equal("Sessions · last 12h", list.Heading);
+        Assert.Equal("", list.Summary);
     }
 
     [Fact]
@@ -220,10 +222,47 @@ public sealed class DashboardTests : IDisposable
 
         // Assert
         Assert.Equal(
-            new SessionRowModel("abc-123", "proj", "proj · Opus · 5 min. ago", "$1.23", 8, "8%", Severity.Ok,
+            new SessionRowModel("abc-123", "proj", "proj · Opus · 5 min. ago",
+                "proj\nFolder: /home/alice/proj\nStatus: Active in the last 10 minutes\nModel: Opus\n" +
+                "Cost: $1.23 · +10 / −2 lines\nContext: 8% · 1,000 in / 200 out tokens\nSession: abc-123\nLast update: 5 minutes ago",
+                "$1.23", 8, "8%", Severity.Ok,
                 SessionStatus.None, "Active in the last 10 minutes", IsActive: true, IsCurrent: true,
                 Distro: null, Cwd: "/home/alice/proj", User: null),
             row);
+    }
+
+    [Fact]
+    public void Build_SessionRowTooltip_NamesDistroStatusAgeAndShortId()
+    {
+        // Arrange
+        SessionSnapshot session = new(
+            "0123456789abcdef", BridgeState.Parse(Payloads.Full), Now.AddMinutes(-1),
+            SessionStatus.Ready, StatusSince: Now.AddMinutes(-3), Distro: "Ubuntu");
+
+        // Act
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
+
+        // Assert
+        Assert.Equal(
+            "my-session\nFolder: /home/alice/proj (Ubuntu)\nStatus: Ready, 3 minutes ago\nModel: Opus\n" +
+            "Cost: $1.23 · +10 / −2 lines\nContext: 8% · 1,000 in / 200 out tokens\nSession: 01234567\nLast update: 1 minute ago",
+            row.Tooltip);
+    }
+
+    [Fact]
+    public void Build_SessionRowTooltip_LeavesOutFolderAndModelWhenUnknown()
+    {
+        // Arrange
+        SessionSnapshot session = Session("abc-123", cost: 0.5, minutesAgo: 2);
+
+        // Act
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
+
+        // Assert
+        Assert.Equal(
+            "Session\nStatus: Active in the last 10 minutes\nCost: $0.50 · +0 / −0 lines\n" +
+            "Context: 0% · 0 in / 0 out tokens\nSession: abc-123\nLast update: 2 minutes ago",
+            row.Tooltip);
     }
 
     [Fact]

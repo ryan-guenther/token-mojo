@@ -16,13 +16,6 @@ fi
 
 command -v dotnet >/dev/null 2>&1 || { echo "The .NET 10 SDK is required: https://dotnet.microsoft.com/download" >&2; exit 1; }
 
-dotnet test tests/TokenMojo.Core.Tests --nologo --verbosity quiet
-dotnet publish src/TokenMojo --nologo --verbosity quiet \
-    --configuration Release --runtime win-x64 --self-contained \
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none \
-    --output "$TARGET"
-echo "Built $TARGET/TokenMojo.exe"
-
 if command -v cygpath >/dev/null 2>&1; then
     EXE="$(cygpath -w "$TARGET/TokenMojo.exe")"
 elif command -v wslpath >/dev/null 2>&1; then
@@ -30,20 +23,44 @@ elif command -v wslpath >/dev/null 2>&1; then
 else
     EXE=""
 fi
-if [[ -n "$EXE" ]] && command -v powershell.exe >/dev/null 2>&1; then
-    # Encoded, so the path reaches PowerShell intact whatever it holds; inside single quotes only ' needs doubling.
-    SCRIPT="\$ErrorActionPreference = 'Stop'
+WINDOWS=""
+if [[ -n "$EXE" ]] && command -v powershell.exe >/dev/null 2>&1; then WINDOWS=1; fi
+
+# Encoded, so the path reaches PowerShell intact whatever it holds; inside single quotes only ' needs doubling.
+run_powershell() {
+    local script="\$ErrorActionPreference = 'Stop'
 \$ProgressPreference = 'SilentlyContinue'
 \$exe = '${EXE//\'/\'\'}'
-\$link = Join-Path ([Environment]::GetFolderPath('Programs')) 'TokenMojo.lnk'
+$1"
+    powershell.exe -NoProfile -NonInteractive -EncodedCommand "$(printf '%s' "$script" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+}
+
+dotnet test tests/TokenMojo.Core.Tests --nologo --verbosity quiet
+
+# A running TokenMojo locks its exe, so stop the one installed here before replacing it.
+if [[ -n "$WINDOWS" ]]; then
+    STOPPED="$(run_powershell "\$running = @(Get-Process TokenMojo -ErrorAction SilentlyContinue | Where-Object { \$_.Path -eq \$exe })
+\$running | Stop-Process -Force
+\$running | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+\$running.Count")"
+    [[ "${STOPPED%$'\r'}" == "0" ]] || echo "Stopped the running TokenMojo"
+fi
+
+dotnet publish src/TokenMojo --nologo --verbosity quiet \
+    --configuration Release --runtime win-x64 --self-contained \
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none \
+    --output "$TARGET"
+echo "Built $TARGET/TokenMojo.exe"
+
+if [[ -n "$WINDOWS" ]]; then
+    LINK="$(run_powershell "\$link = Join-Path ([Environment]::GetFolderPath('Programs')) 'TokenMojo.lnk'
 \$shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut(\$link)
 \$shortcut.TargetPath = \$exe
 \$shortcut.WorkingDirectory = Split-Path \$exe
 \$shortcut.Save()
-\$link"
-    LINK="$(powershell.exe -NoProfile -NonInteractive -EncodedCommand "$(printf '%s' "$SCRIPT" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)")"
+\$link")"
     echo "Start menu shortcut: ${LINK%$'\r'}"
 else
     echo "No Start menu shortcut: Windows is not reachable from here (needs Git Bash or WSL)."
 fi
-echo "Run: \"$TARGET/TokenMojo.exe\"  (quit a running TokenMojo before rebuilding)"
+echo "Run: \"$TARGET/TokenMojo.exe\""
