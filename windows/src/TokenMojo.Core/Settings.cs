@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace TokenMojo.Core;
@@ -15,6 +17,9 @@ public sealed record Settings
     private const int MaxSessionHours = 7 * 24;
 
     public int LongTurnSeconds { get; init; } = 30;
+
+    /// <summary>Whether the pop-out window opens when TokenMojo starts.</summary>
+    public bool OpenPopOutAtStart { get; init; }
 
     /// <summary>How far back the session list reaches.</summary>
     public int SessionHours { get; init; } = 12;
@@ -39,8 +44,10 @@ public sealed record Settings
     /// <summary>Linear team key to the folder its issues are worked in.</summary>
     public IReadOnlyDictionary<string, string> LinearTeams { get; init; } = new Dictionary<string, string>();
 
+    [JsonIgnore]
     public TimeSpan LongTurn => TimeSpan.FromSeconds(LongTurnSeconds);
 
+    [JsonIgnore]
     public TimeSpan SessionWindow => TimeSpan.FromHours(SessionHours);
 
     public static Settings Load(string path)
@@ -57,6 +64,59 @@ public sealed record Settings
         {
             throw new SettingsException($"Cannot read settings file {path}: {e.Message}", e);
         }
+    }
+
+    /// <summary>Why these settings would be refused on load; null when they are valid.</summary>
+    public string? Problem()
+    {
+        try
+        {
+            Validate();
+            return null;
+        }
+        catch (JsonException e)
+        {
+            return e.Message;
+        }
+    }
+
+    /// <summary>
+    /// Writes only the values that differ from the defaults, so the file stays as short as a hand-written one. The file is
+    /// built beside the original and moved over it, so a failed save leaves the original as it was.
+    /// </summary>
+    public void Save(string path)
+    {
+        if (Problem() is { } problem) throw new SettingsException($"Cannot save settings: {problem}");
+        string temp = path + ".tmp";
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(temp, ChangedFromDefaults().ToJsonString(Options));
+            File.Move(temp, path, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            try
+            {
+                File.Delete(temp);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                Trace.TraceWarning("TokenMojo: cannot delete {0}: {1}", temp, cleanup.Message);
+            }
+            throw new SettingsException($"Cannot save settings file {path}: {e.Message}", e);
+        }
+    }
+
+    private JsonObject ChangedFromDefaults()
+    {
+        JsonObject values = JsonSerializer.SerializeToNode(this, Options)!.AsObject();
+        JsonObject defaults = JsonSerializer.SerializeToNode(new Settings(), Options)!.AsObject();
+        foreach ((string name, JsonNode? value) in defaults)
+        {
+            if (JsonNode.DeepEquals(values[name], value)) values.Remove(name);
+        }
+        return values;
     }
 
     // JSON null can reach the non-nullable fields, so they are checked rather than trusted.

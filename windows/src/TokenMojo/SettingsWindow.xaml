@@ -1,0 +1,73 @@
+<Window x:Class="TokenMojo.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TokenMojo Settings"
+        Width="520" SizeToContent="Height" ResizeMode="CanMinimize" ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource WindowBrush}"
+        TextElement.Foreground="{DynamicResource PrimaryTextBrush}" TextElement.FontSize="13">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="FormStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="Section" TargetType="TextBlock">
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Margin" Value="0,16,0,8" />
+            </Style>
+            <Style x:Key="Lines" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                <Setter Property="Height" Value="64" />
+                <Setter Property="AcceptsReturn" Value="True" />
+                <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+                <Setter Property="VerticalContentAlignment" Value="Top" />
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <StackPanel Margin="16">
+        <TextBlock Style="{StaticResource Section}" Text="General" Margin="0,0,0,8" />
+        <CheckBox x:Name="LaunchAtLoginCheck" Content="Launch at Login" Margin="0,0,0,8" />
+        <CheckBox x:Name="OpenPopOutCheck" Content="Open the pop-out window at start" Margin="0,0,0,12" />
+        <TextBlock Style="{StaticResource Caption}" Text="Alert when a turn of at least this many seconds finishes" />
+        <TextBox x:Name="LongTurnBox" Width="80" HorizontalAlignment="Left" AutomationProperties.Name="Finished alert turn length in seconds" />
+
+        <TextBlock Style="{StaticResource Section}" Text="Sessions" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource Caption}" Text="Hours shown (1 to 168)" />
+                <TextBox x:Name="HoursBox" AutomationProperties.Name="Hours of sessions shown" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Style="{StaticResource Caption}" Text="Rows shown before scrolling" />
+                <TextBox x:Name="RowsBox" AutomationProperties.Name="Session rows shown" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Style="{StaticResource Section}" Text="New sessions" />
+        <TextBlock Style="{StaticResource Caption}" Text="Run in" />
+        <ComboBox x:Name="DistroBox" AutomationProperties.Name="Run new sessions in" />
+        <TextBlock Style="{StaticResource Caption}" Text="WSL default folder" Margin="0,12,0,4" />
+        <TextBox x:Name="DefaultFolderBox" AutomationProperties.Name="WSL default folder" />
+        <TextBlock Style="{StaticResource Caption}" Text="WSL folders to scan for repositories, one per line" Margin="0,12,0,4" />
+        <TextBox x:Name="RepoRootsBox" Style="{StaticResource Lines}" AutomationProperties.Name="WSL folders to scan for repositories" />
+        <TextBlock Style="{StaticResource Caption}" Text="Windows default folder" Margin="0,12,0,4" />
+        <TextBox x:Name="WindowsDefaultFolderBox" AutomationProperties.Name="Windows default folder" />
+        <TextBlock Style="{StaticResource Caption}" Text="Windows folders to scan for repositories, one per line" Margin="0,12,0,4" />
+        <TextBox x:Name="WindowsRepoRootsBox" Style="{StaticResource Lines}" AutomationProperties.Name="Windows folders to scan for repositories" />
+        <TextBlock Style="{StaticResource Caption}" Text="Linear teams, one per line as TEAM = folder" Margin="0,12,0,4" />
+        <TextBox x:Name="TeamsBox" Style="{StaticResource Lines}" AutomationProperties.Name="Linear teams" />
+
+        <TextBlock x:Name="ErrorText" Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{DynamicResource CriticalBrush}"
+                   Visibility="Collapsed" AutomationProperties.LiveSetting="Assertive" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Cancel" Click="OnCancel" Margin="0,0,8,0" />
+            <Button Content="Save" IsDefault="True" Click="OnSave" />
+        </StackPanel>
+    </StackPanel>
+</Window>

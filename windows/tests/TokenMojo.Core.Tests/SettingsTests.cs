@@ -239,4 +239,76 @@ public sealed class SettingsTests : IDisposable
         // Assert
         Assert.Contains(path, error.Message);
     }
+
+    [Fact]
+    public void Save_WritesOnlyTheValuesThatDifferFromTheDefaults()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "TokenMojo", "settings.json");
+        Settings settings = new() { SessionHours = 24, OpenPopOutAtStart = true, LinearTeams = new Dictionary<string, string> { ["ENG"] = "~/my-app" } };
+
+        // Act
+        settings.Save(path);
+
+        // Assert
+        Assert.Equal(
+            """
+            {
+              "openPopOutAtStart": true,
+              "sessionHours": 24,
+              "linearTeams": {
+                "ENG": "~/my-app"
+              }
+            }
+            """.ReplaceLineEndings("\n"),
+            File.ReadAllText(path).ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void Save_ThenLoad_ReturnsTheSameValues()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "settings.json");
+        Settings settings = new() { SessionRows = 20, Distro = "Ubuntu", RepoRoots = ["~", "~/code"] };
+
+        // Act
+        settings.Save(path);
+        Settings loaded = Settings.Load(path);
+
+        // Assert
+        Assert.Equal(20, loaded.SessionRows);
+        Assert.Equal("Ubuntu", loaded.Distro);
+        Assert.Equal(["~", "~/code"], loaded.RepoRoots);
+    }
+
+    [Fact]
+    public void Save_InvalidSettings_RefusesAndLeavesTheFileAlone()
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", """{"sessionRows": 20}""", DateTimeOffset.UtcNow);
+        Settings settings = new() { SessionHours = 0 };
+
+        // Act
+        SettingsException error = Assert.Throws<SettingsException>(() => settings.Save(path));
+
+        // Assert
+        Assert.Contains("sessionHours", error.Message);
+        Assert.Equal("""{"sessionRows": 20}""", File.ReadAllText(path));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Fact]
+    public void Load_NoFileYet_LeavesOutTheDerivedTimes()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "settings.json");
+
+        // Act
+        Settings.Load(path);
+
+        // Assert
+        string written = File.ReadAllText(path);
+        Assert.DoesNotContain("longTurn\"", written);
+        Assert.DoesNotContain("sessionWindow", written);
+    }
 }

@@ -31,6 +31,7 @@ internal sealed class TrayController : IDisposable
     private readonly WslDistros _wsl = new();
     private PopOutWindow? _popOut;
     private LauncherWindow? _launcher;
+    private SettingsWindow? _settingsWindow;
     private IReadOnlyList<ClaudeSource> _sources = [];
     private DateTimeOffset _lastDiscovery = DateTimeOffset.MinValue;
     private BridgeSnapshot? _latest;
@@ -43,6 +44,7 @@ internal sealed class TrayController : IDisposable
         _locator = new ClaudeDirLocator(_windowsHome, _wsl, new WslAccounts(), Environment.GetEnvironmentVariable);
         _flyout.PopOutRequested += (_, _) => ShowPopOut();
         _flyout.NewSessionRequested += (_, _) => ShowLauncher();
+        _flyout.SettingsRequested += (_, _) => ShowSettings();
 
         _launchAtLogin.Click += (_, _) => StartupRegistration.Toggle();
         Forms.ContextMenuStrip menu = new();
@@ -51,6 +53,7 @@ internal sealed class TrayController : IDisposable
         menu.Items.Add(new Forms.ToolStripMenuItem("Pop Out Window", null, (_, _) => ShowPopOut()));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(_launchAtLogin);
+        menu.Items.Add(new Forms.ToolStripMenuItem("Settings…", null, (_, _) => ShowSettings()));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(new Forms.ToolStripMenuItem("Quit", null, (_, _) => Application.Current.Shutdown()));
         menu.Opening += (_, _) => _launchAtLogin.Checked = StartupRegistration.IsEnabled;
@@ -69,6 +72,20 @@ internal sealed class TrayController : IDisposable
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();
         _ = RefreshAsync();
+        if (OpenPopOutAtStart()) ShowPopOut();
+    }
+
+    // An unreadable settings file is reported in the dashboard on the first refresh; here it only means no pop-out.
+    private bool OpenPopOutAtStart()
+    {
+        try
+        {
+            return Settings.Load(_settingsPath).OpenPopOutAtStart;
+        }
+        catch (SettingsException)
+        {
+            return false;
+        }
     }
 
     public void Dispose()
@@ -199,6 +216,24 @@ internal sealed class TrayController : IDisposable
         _launcher.Bring();
     }
 
+    // One settings window at a time, like the launcher.
+    private void ShowSettings()
+    {
+        if (_settingsWindow is null)
+        {
+            // Sources are found in the background; until the first discovery the list holds only what is configured.
+            IReadOnlyList<ClaudeSource> sources = _sources;
+            IReadOnlyList<string> running = sources.Select(source => source.Distro).OfType<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            _settingsWindow = new SettingsWindow(
+                _settingsPath, LaunchTargets.Targets(running, sources, sources.Any(source => source.Distro is null)));
+            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+            _settingsWindow.Saved += async (_, _) => await RefreshAsync();
+            _settingsWindow.Show();
+        }
+        _settingsWindow.Bring();
+    }
+
     private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
         if (e.Category != UserPreferenceCategory.General) return;
@@ -206,6 +241,7 @@ internal sealed class TrayController : IDisposable
         WindowChrome.Apply(_flyout, round: true);
         if (_popOut is not null) WindowChrome.Apply(_popOut, round: false);
         if (_launcher is not null) WindowChrome.Apply(_launcher, round: false);
+        if (_settingsWindow is not null) WindowChrome.Apply(_settingsWindow, round: false);
         Render(_latest, DateTimeOffset.Now);
     }
 
