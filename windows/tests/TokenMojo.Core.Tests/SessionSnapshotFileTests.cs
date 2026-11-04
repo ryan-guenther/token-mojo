@@ -370,6 +370,35 @@ public sealed class SessionSnapshotFileTests : IDisposable
         Assert.Equal(["sessions.json"], Directory.GetFiles(_temp.Path).Select(Path.GetFileName));
     }
 
+    [Fact]
+    public void Write_TempPathTakenByAFolder_ThrowsAndLeavesThePreviousFile()
+    {
+        // Arrange
+        string path = _temp.Write("sessions.json", "old", Now);
+        _temp.MakeDir("sessions.json.tmp");
+
+        // Act
+        Exception? thrown = Record.Exception(() => SessionSnapshotFile.Write(path, "new"));
+
+        // Assert
+        Assert.True(thrown is IOException or UnauthorizedAccessException);
+        Assert.Equal("old", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Write_TargetIsAFolder_ThrowsAndLeavesNoTempFile()
+    {
+        // Arrange
+        string path = _temp.MakeDir("sessions.json");
+
+        // Act
+        Exception? thrown = Record.Exception(() => SessionSnapshotFile.Write(path, "new"));
+
+        // Assert
+        Assert.True(thrown is IOException or UnauthorizedAccessException);
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
     private static string Worktree(string host, string name) =>
         $$$"""{"workspace":{"current_dir":"/w","repo":{"host":"{{{host}}}","owner":"octo","name":"widgets"}},"worktree":{"name":"{{{name}}}"}}""";
 

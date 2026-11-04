@@ -398,7 +398,7 @@ So that another local tool (a page that lists pull requests, say) can tell which
 
 | Field | Meaning |
 |---|---|
-| `written` | When the file was written, in UTC. It is rewritten when the list changes and at least once a minute while TokenMojo runs, so a `written` more than a minute or two old means TokenMojo is not running. The file is left in place on exit. |
+| `written` | When the file was written, in UTC. It is rewritten when the list changes and at least once a minute while TokenMojo runs, so a `written` more than a minute or two old means TokenMojo is not running or cannot currently read its settings or session files. A refresh that could not read everything leaves the file as it was. The file is left in place on exit. |
 | `sessions` | Every session in the last `sessionHours`, open ones first, in the order the dashboard lists them, then closed ones. Not limited by `sessionRows`. |
 | `title` | The row's title: Claude Code's session name, else the first prompt, else the folder. |
 | `status` | `needs_input`, `ready`, `working`, `ended`, or `none` for a session without the status hooks. `statusSince` is when it last changed, or null. |

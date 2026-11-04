@@ -154,7 +154,10 @@ internal sealed class TrayController : IDisposable
             // Read every refresh, so fixing a broken file takes effect without a restart.
             Settings settings = Settings.Load(_settingsPath);
             LoadedState? current = SessionStore.LoadCurrent(_sources);
-            return new BridgeSnapshot(current, current is null ? [] : SessionStore.LoadSessions(_sources, now, settings.SessionWindow), null, settings);
+            bool skipped = false;
+            IReadOnlyList<SessionSnapshot> sessions =
+                current is null ? [] : SessionStore.LoadSessions(_sources, now, settings.SessionWindow, out skipped);
+            return new BridgeSnapshot(current, sessions, null, settings, skipped);
         }
         catch (SettingsException e)
         {
@@ -169,11 +172,11 @@ internal sealed class TrayController : IDisposable
         }
     }
 
-    // Off the UI thread, one refresh at a time. A failed load leaves the last file alone rather than empty it, and a
-    // failed write is retried on the next refresh.
+    // Off the UI thread, one refresh at a time. A refresh that could not read everything leaves the last file alone, so
+    // a reader never sees an open session vanish for one refresh; a failed write is retried on the next refresh.
     private void PublishSessions(BridgeSnapshot snapshot)
     {
-        if (snapshot.Settings is null) return;
+        if (snapshot.Settings is null || snapshot.Skipped) return;
         DateTimeOffset now = DateTimeOffset.Now;
         IReadOnlyList<SnapshotSession> entries = SessionSnapshotFile.Entries(snapshot.Sessions, now);
         if (!SessionSnapshotFile.ShouldWrite(_publishedSessions, entries, _sessionsWrittenAt, now)) return;
@@ -290,5 +293,7 @@ internal sealed class TrayController : IDisposable
         Render(_latest, DateTimeOffset.Now);
     }
 
-    private sealed record BridgeSnapshot(LoadedState? Current, IReadOnlyList<SessionSnapshot> Sessions, string? Error, Settings? Settings);
+    // Skipped: a source or session could not be read this time, so Sessions may be missing some that are still there.
+    private sealed record BridgeSnapshot(
+        LoadedState? Current, IReadOnlyList<SessionSnapshot> Sessions, string? Error, Settings? Settings, bool Skipped = false);
 }

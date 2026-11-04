@@ -75,7 +75,8 @@ public static partial class SessionSnapshotFile
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            File.Delete(temp);
+            // The temp path may be what could not be written, even a folder; only a file of ours is removed.
+            if (File.Exists(temp)) File.Delete(temp);
             throw;
         }
     }

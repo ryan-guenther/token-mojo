@@ -36,13 +36,22 @@ public static class SessionStore
     }
 
     // Claude Code signals no session end, so "recent" is the best proxy for "open".
-    public static IReadOnlyList<SessionSnapshot> LoadSessions(IEnumerable<ClaudeSource> sources, DateTimeOffset now, TimeSpan window)
+    public static IReadOnlyList<SessionSnapshot> LoadSessions(IEnumerable<ClaudeSource> sources, DateTimeOffset now, TimeSpan window) =>
+        LoadSessions(sources, now, window, out _);
+
+    /// <param name="skipped">
+    /// Whether a source or a session could not be read this time (a distro that stopped mid-read, a file being replaced),
+    /// so the list may be missing sessions that are still there. An undecodable file is foreign, not skipped.
+    /// </param>
+    public static IReadOnlyList<SessionSnapshot> LoadSessions(
+        IEnumerable<ClaudeSource> sources, DateTimeOffset now, TimeSpan window, out bool skipped)
     {
         DateTimeOffset cutoff = now - window;
         Dictionary<string, Candidate> newestById = new();
+        skipped = false;
         foreach (ClaudeSource source in sources)
         {
-            foreach (Candidate candidate in LoadSource(source, cutoff, now))
+            foreach (Candidate candidate in LoadSource(source, cutoff, now, ref skipped))
             {
                 // The same session can be on two sources (say a Windows and a WSL copy): keep the newest, so
                 // rows, counts and alerts all see one.
@@ -53,7 +62,7 @@ public static class SessionStore
         return newestById.Values.Select(c => c.Session).OrderByDescending(s => s.Updated).ToList();
     }
 
-    private static List<Candidate> LoadSource(ClaudeSource source, DateTimeOffset cutoff, DateTimeOffset now)
+    private static List<Candidate> LoadSource(ClaudeSource source, DateTimeOffset cutoff, DateTimeOffset now, ref bool skipped)
     {
         List<Candidate> sessions = new();
         DirectoryInfo dir = new(source.SessionsDir);
@@ -65,9 +74,17 @@ public static class SessionStore
             {
                 DateTimeOffset updated = new(file.LastWriteTimeUtc);
                 if (updated <= cutoff) continue;
-                if (TryRead(file) is not { } state) continue;
+                if (TryRead(file, out bool unreadable) is not { } state)
+                {
+                    skipped |= unreadable;
+                    continue;
+                }
                 // An events file that is there but unreadable is skipped until the next refresh, like the bridge file.
-                if (!TryReadEvents(file, now, out SessionEventState? events, out DateTime eventsWritten)) continue;
+                if (!TryReadEvents(file, now, out SessionEventState? events, out DateTime eventsWritten))
+                {
+                    skipped = true;
+                    continue;
+                }
                 sessions.Add(new Candidate(
                     new SessionSnapshot(
                         Path.GetFileNameWithoutExtension(file.Name), state, updated,
@@ -79,6 +96,7 @@ public static class SessionStore
         // One unreadable source (a WSL distro that stopped mid-read) must not hide the others.
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
+            skipped = true;
             return [];
         }
         return sessions;
@@ -88,16 +106,23 @@ public static class SessionStore
     private static string? FirstPrompt(ClaudeSource source, BridgeState state) =>
         state.SessionName is null && state.TranscriptPath is { } transcript ? TranscriptTitle.For(source, transcript) : null;
 
-    private static BridgeState? TryRead(FileInfo file)
+    // unreadable: the file is there but could not be read this time, as opposed to one that is not a bridge file.
+    private static BridgeState? TryRead(FileInfo file, out bool unreadable)
     {
+        unreadable = false;
         try
         {
             return BridgeState.Parse(ReadShared(file.FullName));
         }
         // Writes are atomic renames, so an undecodable file is foreign; one that vanished or is locked
         // is caught mid-replace and is read again on the next refresh.
-        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
+        catch (JsonException)
         {
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            unreadable = true;
             return null;
         }
     }
