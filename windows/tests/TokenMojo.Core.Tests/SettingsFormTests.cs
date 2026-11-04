@@ -89,4 +89,84 @@ public sealed class SettingsFormTests
         // Assert
         Assert.Contains("defaultFolder", result.Problem);
     }
+
+    [Fact]
+    public void FromThenApply_ActionsAndOwners_GiveBackTheSameSettings()
+    {
+        // Arrange
+        Settings original = new()
+        {
+            Actions = new Dictionary<string, string> { ["review"] = "Review {url}", ["merge"] = "Merge main into {url} = done" },
+            AllowedOwners = ["octo", "Octo-Cat"],
+        };
+
+        // Act
+        SettingsResult result = SettingsForm.From(original).Apply(new Settings());
+
+        // Assert
+        Assert.Null(result.Problem);
+        Assert.Equal(original.Actions, result.Settings!.Actions);
+        Assert.Equal(["octo", "Octo-Cat"], result.Settings.AllowedOwners);
+    }
+
+    [Fact]
+    public void From_Actions_WritesNameEqualsPromptLines()
+    {
+        // Arrange
+        Settings settings = new() { Actions = new Dictionary<string, string> { ["review"] = "Review {url}", ["merge"] = "Merge {url}" } };
+
+        // Act
+        SettingsForm form = SettingsForm.From(settings);
+
+        // Assert
+        Assert.Equal($"review = Review {{url}}{Environment.NewLine}merge = Merge {{url}}", form.Actions);
+    }
+
+    [Fact]
+    public void Apply_ActionAndOwnerLines_TrimsLowercasesNamesAndSkipsBlankLines()
+    {
+        // Arrange
+        SettingsForm form = SettingsForm.From(new Settings()) with
+        {
+            Actions = " Review = Review {url} \r\n\r\nmerge=Merge {url}",
+            AllowedOwners = " octo \r\n\r\nOcto-Cat\r\n",
+        };
+
+        // Act
+        SettingsResult result = form.Apply(new Settings());
+
+        // Assert
+        Assert.Equal(new Dictionary<string, string> { ["review"] = "Review {url}", ["merge"] = "Merge {url}" }, result.Settings!.Actions);
+        Assert.Equal(["octo", "Octo-Cat"], result.Settings.AllowedOwners);
+    }
+
+    [Theory]
+    [InlineData("review Review {url}", "Each action line must be name = prompt, not 'review Review {url}'.")]
+    [InlineData("review = Review {url}\nReview = Look at {url}", "The action review is listed twice.")]
+    [InlineData("review = Review it", "actions.review must be a prompt containing {url}")]
+    public void Apply_BadActionLine_Refuses(string actions, string expected)
+    {
+        // Arrange
+        SettingsForm form = SettingsForm.From(new Settings()) with { Actions = actions };
+
+        // Act
+        SettingsResult result = form.Apply(new Settings());
+
+        // Assert
+        Assert.Null(result.Settings);
+        Assert.Equal(expected, result.Problem);
+    }
+
+    [Fact]
+    public void Apply_BadOwnerLine_Refuses()
+    {
+        // Arrange
+        SettingsForm form = SettingsForm.From(new Settings()) with { AllowedOwners = "octo\nocto_cat" };
+
+        // Act
+        SettingsResult result = form.Apply(new Settings());
+
+        // Assert
+        Assert.Equal("allowedOwners entry 'octo_cat' must be a GitHub user or organization name", result.Problem);
+    }
 }

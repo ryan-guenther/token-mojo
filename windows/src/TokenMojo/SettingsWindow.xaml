@@ -62,6 +62,12 @@
         <TextBlock Style="{StaticResource Caption}" Text="Linear teams, one per line as TEAM = folder" Margin="0,12,0,4" />
         <TextBox x:Name="TeamsBox" Style="{StaticResource Lines}" AutomationProperties.Name="Linear teams" />
 
+        <TextBlock Style="{StaticResource Section}" Text="Links" />
+        <TextBlock Style="{StaticResource Caption}" Text="Actions for tokenmojo://launch links, one per line as name = prompt with {url}" TextWrapping="Wrap" />
+        <TextBox x:Name="ActionsBox" Style="{StaticResource Lines}" AutomationProperties.Name="Link actions" />
+        <TextBlock Style="{StaticResource Caption}" Text="GitHub owners whose pull requests links may start sessions for, one per line" Margin="0,12,0,4" TextWrapping="Wrap" />
+        <TextBox x:Name="AllowedOwnersBox" Style="{StaticResource Lines}" AutomationProperties.Name="Owners allowed in links" />
+
         <TextBlock x:Name="ErrorText" Margin="0,12,0,0" TextWrapping="Wrap" Foreground="{DynamicResource CriticalBrush}"
                    Visibility="Collapsed" AutomationProperties.LiveSetting="Assertive" />
 

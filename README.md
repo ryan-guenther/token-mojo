@@ -353,6 +353,24 @@ A session TokenMojo starts or resumes, in WSL or on Windows, gets none of the en
 
 In WSL the session runs as the distro's default user when that user has a `~/.claude` with a cctokmon `tm`; otherwise as the first user that has both, and the window says so under the prompt. If nobody has a cctokmon `tm` (none installed, or a `tm` that is not cctokmon's), nothing is started and the window says which; if the distro did not answer it says it could not check, and a `tm` that exists but cannot be read, or a check that could not run as that user, is reported as such. Pressing Start asks again when no user was found. While a session is being started, Cancel and closing the window wait for it to finish. Limits: users and their `tm` are read when the window opens, so reopen it after installing or removing `tm`; accounts are found only for homes under `/home` and `/root`; a home shared by two accounts goes to the default user, else the first in the account list. Repositories are listed one level below each root only, and not when `.git` is a file (a worktree or submodule). A repository that cannot be read is skipped. The **+** button is in the Sessions card, which shows once at least one session has been seen; the menu entries are always there.
 
+### Starting and focusing sessions from links
+
+TokenMojo registers the `tokenmojo://` scheme for your Windows user each time it starts (`HKEY_CURRENT_USER\Software\Classes\tokenmojo`, whose `shell\open\command` runs `"<path to TokenMojo.exe>" "%1"`), so a page or a document can link to it:
+
+- `tokenmojo://launch?action=<name>&pr=<pull request URL>` starts a session for the pull request at once, with no window to fill in. The pull request URL is URL-encoded and must be `https://github.com/<owner>/<repo>/pull/<number>`, optionally followed by `/files`, `/commits`, `/checks`, a query or a fragment. The prompt is the action's template from `actions` with `{url}` replaced by `https://github.com/<owner>/<repo>/pull/<number>`; a link never carries prompt text. The session runs where the launcher would (`distro`, then the first available target) in the repository that has a remote at `<owner>/<repo>`, found the same way as for a pull request link in the launcher's prompt, in the worktree `pr-<number>`. Only owners listed in `allowedOwners` are started.
+- `tokenmojo://focus?session=<session id>` does what clicking the session's row does: it brings its terminal window forward, or offers to resume it. Only an open session in the list is focused.
+
+A link that cannot be followed (an unknown action, an owner that is not allowed, no matching repository, a closed session, a malformed link) shows a notification saying why. Opening the same launch link again while its session is still starting does nothing. When TokenMojo is already running, the copy Windows starts for the link passes it on and exits. For example, with this in `settings.json`:
+
+```json
+{
+  "actions": { "review": "Review {url} and list what should change" },
+  "allowedOwners": ["octo"]
+}
+```
+
+`tokenmojo://launch?action=review&pr=https%3A%2F%2Fgithub.com%2Focto%2Fwidgets%2Fpull%2F12` starts a session in your clone of `octo/widgets`, in the worktree `pr-12`, with the prompt `Review https://github.com/octo/widgets/pull/12 and list what should change`. `uninstall.sh` does not touch the Windows app; to remove the scheme, delete that registry key.
+
 ### Settings
 
 `%APPDATA%\TokenMojo\settings.json` is created on first run with every setting at its default:
@@ -367,7 +385,9 @@ In WSL the session runs as the distro's default user when that user has a `~/.cl
   "repoRoots": ["~"],
   "windowsDefaultFolder": "~",
   "windowsRepoRoots": ["~"],
-  "linearTeams": {}
+  "linearTeams": {},
+  "actions": {},
+  "allowedOwners": []
 }
 ```
 
@@ -382,6 +402,8 @@ In WSL the session runs as the distro's default user when that user has a `~/.cl
 | `windowsDefaultFolder` | The launcher's first folder on Windows. A full path such as `C:\\code` (backslashes doubled in JSON), or `~`, `~\\...` for your profile. |
 | `windowsRepoRoots` | Folders whose git repositories the launcher offers on Windows, same form as `windowsDefaultFolder`. |
 | `linearTeams` | Linear team key to the folder its issues are worked in, for example `{"ENG": "~/my-app"}`. Keys are upper case letters and digits, starting with a letter. A folder is a WSL one (`~`, `~/...` or `/...`) or a Windows one (`C:\\...` or `~\\...`), and the launcher uses it only when starting a session in that kind of place. |
+| `actions` | The prompts a [`tokenmojo://launch` link](#starting-and-focusing-sessions-from-links) can start a session with, by name, for example `{"review": "Review {url}"}`. Names are up to 32 lowercase letters, digits and hyphens. A prompt is one line and must contain `{url}`, which is replaced by the pull request's URL. |
+| `allowedOwners` | The GitHub users and organizations whose pull requests a launch link may start a session for, for example `["octo"]`, matched ignoring case. Empty refuses every launch link. |
 
 The file is read on every refresh. If it is not valid JSON or has a bad value, the dashboard shows the error instead of falling back to defaults.
 

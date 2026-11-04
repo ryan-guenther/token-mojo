@@ -44,6 +44,12 @@ public sealed record Settings
     /// <summary>Linear team key to the folder its issues are worked in.</summary>
     public IReadOnlyDictionary<string, string> LinearTeams { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>The prompts a tokenmojo://launch link can start a session with, by action name; each holds {url}.</summary>
+    public IReadOnlyDictionary<string, string> Actions { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>The GitHub owners whose pull requests a launch link may start a session for; empty refuses every launch link.</summary>
+    public IReadOnlyList<string> AllowedOwners { get; init; } = [];
+
     [JsonIgnore]
     public TimeSpan LongTurn => TimeSpan.FromSeconds(LongTurnSeconds);
 
@@ -141,6 +147,23 @@ public sealed record Settings
             if (!LinuxFolder.IsValid(folder) && !WindowsFolder.IsWindowsOnly(folder))
                 throw new JsonException(
                     $"linearTeams.{team} must be a folder starting with ~/ or /, just ~, or a Windows path such as C:\\code or ~\\code, not '{folder}'");
+        }
+        if (Actions is null) throw new JsonException("actions must be an object");
+        foreach ((string name, string template) in Actions)
+        {
+            if (!TokenMojoLink.IsActionName(name))
+                throw new JsonException($"actions key '{name}' must be up to 32 lowercase letters, digits and hyphens, such as review");
+            if (template is null || !template.Contains(LinkLaunch.UrlPlaceholder, StringComparison.Ordinal))
+                throw new JsonException($"actions.{name} must be a prompt containing {LinkLaunch.UrlPlaceholder}");
+            // One line, so it fits a name = prompt line in the settings window.
+            if (template.Any(char.IsControl))
+                throw new JsonException($"actions.{name} must be one line, without tabs or other control characters");
+        }
+        if (AllowedOwners is null) throw new JsonException("allowedOwners must be a list");
+        foreach (string owner in AllowedOwners)
+        {
+            if (owner is null || !PullRequestRef.IsOwner(owner))
+                throw new JsonException($"allowedOwners entry '{owner}' must be a GitHub user or organization name");
         }
     }
 

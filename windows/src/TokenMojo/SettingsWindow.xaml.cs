@@ -58,6 +58,8 @@ public partial class SettingsWindow : Window
         WindowsDefaultFolderBox.Text = form.WindowsDefaultFolder;
         WindowsRepoRootsBox.Text = form.WindowsRepoRoots;
         TeamsBox.Text = form.LinearTeams;
+        ActionsBox.Text = form.Actions;
+        AllowedOwnersBox.Text = form.AllowedOwners;
 
         DistroBox.Items.Add(new ComboBoxItem { Content = FirstAvailableText, Tag = null });
         foreach (string target in targets) DistroBox.Items.Add(new ComboBoxItem { Content = target, Tag = target });
@@ -78,7 +80,9 @@ public partial class SettingsWindow : Window
         RepoRootsBox.Text,
         WindowsDefaultFolderBox.Text,
         WindowsRepoRootsBox.Text,
-        TeamsBox.Text);
+        TeamsBox.Text,
+        ActionsBox.Text,
+        AllowedOwnersBox.Text);
 
     private void OnSave(object sender, RoutedEventArgs e)
     {

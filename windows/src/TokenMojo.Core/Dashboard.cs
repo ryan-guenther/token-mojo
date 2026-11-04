@@ -162,8 +162,8 @@ public static class Dashboard
         return string.Join("\n", lines.OfType<string>());
     }
 
-    // A session without hooks never reports its end, so once idle it is taken as closed.
-    private static bool IsClosed(SessionSnapshot session, DateTimeOffset now) =>
+    /// <summary>Whether the session is listed under Closed: it has ended, or it has no hooks and is idle, since nothing reports its end.</summary>
+    public static bool IsClosed(SessionSnapshot session, DateTimeOffset now) =>
         session.Status == SessionStatus.Ended || (session.Status == SessionStatus.None && !session.IsActive(now));
 
     // An ended session was last open when it ended, not at its last bridge write.
