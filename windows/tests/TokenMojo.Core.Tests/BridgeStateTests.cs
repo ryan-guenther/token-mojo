@@ -23,6 +23,31 @@ public class BridgeStateTests
     }
 
     [Fact]
+    public void Parse_WorktreeSessionPayload_ReadsRepositoryAndWorktreeName()
+    {
+        // Act
+        BridgeState state = BridgeState.Parse("""
+            {"workspace":{"current_dir":"/w","repo":{"host":"github.com","owner":"octo","name":"widgets"}},
+             "worktree":{"name":"pr-12","path":"/w","branch":"b"}}
+            """);
+
+        // Assert
+        Assert.Equal(new BridgeRepo("github.com", "octo", "widgets"), state.Workspace?.Repo);
+        Assert.Equal("pr-12", state.Worktree?.Name);
+    }
+
+    [Fact]
+    public void Parse_PayloadOutsideAWorktreeOrRepository_LeavesRepositoryAndWorktreeNull()
+    {
+        // Act
+        BridgeState state = BridgeState.Parse(Payloads.Full);
+
+        // Assert
+        Assert.Null(state.Workspace?.Repo);
+        Assert.Null(state.Worktree);
+    }
+
+    [Fact]
     public void Parse_ApiKeyPayloadWithoutRateLimits_LeavesRateLimitsNull()
     {
         // Act

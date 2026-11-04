@@ -102,19 +102,32 @@ public static class Dashboard
         IReadOnlyList<SessionSnapshot> sessions, string? currentId, DateTimeOffset now, Settings settings)
     {
         double totalCost = sessions.Sum(s => s.State.Cost?.TotalCostUsd ?? 0);
-        ILookup<bool, SessionSnapshot> byClosed = sessions.ToLookup(session => IsClosed(session, now));
+        (IReadOnlyList<SessionSnapshot> open, IReadOnlyList<SessionSnapshot> closed) = Ordered(sessions, now);
         // Open sessions fill the rows first; closed ones take what is left.
-        List<SessionRowModel> openRows = byClosed[false]
-            .OrderBy(session => ListGroup(session.Status))
-            .ThenByDescending(session => session.Updated)
+        List<SessionRowModel> openRows = open
             .Take(settings.SessionRows)
             .Select(session => Row(session, currentId, now)).ToList();
-        List<SessionRowModel> closedRows = byClosed[true]
-            .OrderByDescending(LastOpen)
+        List<SessionRowModel> closedRows = closed
             .Take(settings.SessionRows - openRows.Count)
             .Select(session => Row(session, currentId, now)).ToList();
         string summary = sessions.Count > 0 ? $"{sessions.Count} · {Gauges.CostText(totalCost, 2)} total" : "";
         return new SessionListModel($"Sessions · last {settings.SessionHours}h", summary, openRows, closedRows);
+    }
+
+    /// <summary>
+    /// Open and closed sessions in the order the list shows them: open ones by needs input, ready, working, no status, then
+    /// newest first; closed ones by when they were last open, newest first.
+    /// </summary>
+    public static (IReadOnlyList<SessionSnapshot> Open, IReadOnlyList<SessionSnapshot> Closed) Ordered(
+        IReadOnlyList<SessionSnapshot> sessions, DateTimeOffset now)
+    {
+        ILookup<bool, SessionSnapshot> byClosed = sessions.ToLookup(session => IsClosed(session, now));
+        List<SessionSnapshot> open = byClosed[false]
+            .OrderBy(session => ListGroup(session.Status))
+            .ThenByDescending(session => session.Updated)
+            .ToList();
+        List<SessionSnapshot> closed = byClosed[true].OrderByDescending(LastOpen).ToList();
+        return (open, closed);
     }
 
     private static SessionRowModel Row(SessionSnapshot session, string? currentId, DateTimeOffset now)
