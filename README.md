@@ -371,6 +371,46 @@ A link that cannot be followed (an unknown action, an owner that is not allowed,
 
 `tokenmojo://launch?action=review&pr=https%3A%2F%2Fgithub.com%2Focto%2Fwidgets%2Fpull%2F12` starts a session in your clone of `octo/widgets`, in the worktree `pr-12`, with the prompt `Review https://github.com/octo/widgets/pull/12 and list what should change`. `uninstall.sh` does not touch the Windows app; to remove the scheme, delete that registry key.
 
+### The session list for other tools
+
+So that another local tool (a page that lists pull requests, say) can tell which sessions are open without working out session status itself, TokenMojo writes the session list to `%LOCALAPPDATA%\TokenMojo\sessions.json` after each refresh:
+
+```json
+{
+  "version": 1,
+  "written": "2026-11-04T17:00:00Z",
+  "sessions": [
+    {
+      "id": "11111111-2222-4333-8444-555555555555",
+      "title": "Review octo/widgets#12",
+      "status": "ready",
+      "statusSince": "2026-11-04T16:58:12Z",
+      "open": true,
+      "distro": "Ubuntu",
+      "folder": "/home/alice/widgets/.claude/worktrees/pr-12",
+      "repository": "octo/widgets",
+      "worktree": "pr-12",
+      "pullRequest": { "owner": "octo", "repo": "widgets", "number": 12 }
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `written` | When the file was written, in UTC. It is rewritten when the list changes and at least once a minute while TokenMojo runs, so a `written` more than a minute or two old means TokenMojo is not running or cannot currently read its settings or session files. A refresh that could not read everything leaves the file as it was. The file is left in place on exit. |
+| `sessions` | Every session in the last `sessionHours`, open ones first, in the order the dashboard lists them, then closed ones. Not limited by `sessionRows`. |
+| `title` | The row's title: Claude Code's session name, else the first prompt, else the folder. |
+| `status` | `needs_input`, `ready`, `working`, `ended`, or `none` for a session without the status hooks. `statusSince` is when it last changed, or null. |
+| `open` | False for a session listed under Closed. |
+| `distro` | The WSL distro, or null for a session on Windows itself. |
+| `folder` | Where the session was started (`workspace.project_dir`), else its current folder. |
+| `repository` | `owner/name` when the session's repository is on github.com, else null. |
+| `worktree` | The Claude Code worktree's name, or null. |
+| `pullRequest` | Set only when `repository` is known and `worktree` is exactly `pr-<number>`, the name `tokenmojo://launch` and the launcher give a pull request's worktree; else null. |
+
+A reader that finds an open session for a pull request can send the user to it with `tokenmojo://focus?session=<id>` rather than start a second one.
+
 ### Settings
 
 `%APPDATA%\TokenMojo\settings.json` is created on first run with every setting at its default:

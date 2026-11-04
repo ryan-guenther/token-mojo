@@ -26,6 +26,8 @@ internal sealed class TrayController : IDisposable
     private readonly string _windowsHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private readonly string _settingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TokenMojo", "settings.json");
+    private readonly string _sessionsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TokenMojo", "sessions.json");
     private readonly ClaudeDirLocator _locator;
     private readonly Forms.NotifyIcon _notifyIcon = new();
     private readonly Forms.ToolStripMenuItem _launchAtLogin = new("Launch at Login");
@@ -39,6 +41,8 @@ internal sealed class TrayController : IDisposable
     private IReadOnlyList<ClaudeSource> _sources = [];
     private DateTimeOffset _lastDiscovery = DateTimeOffset.MinValue;
     private BridgeSnapshot? _latest;
+    private IReadOnlyList<SnapshotSession>? _publishedSessions;
+    private DateTimeOffset? _sessionsWrittenAt;
     private IReadOnlyDictionary<string, SeenStatus>? _alertBaseline;
     private string? _balloonSessionId;
     private bool _refreshing;
@@ -121,7 +125,12 @@ internal sealed class TrayController : IDisposable
         try
         {
             // WSL shares are network paths, so read them off the UI thread.
-            BridgeSnapshot snapshot = await Task.Run(Load);
+            BridgeSnapshot snapshot = await Task.Run(() =>
+            {
+                BridgeSnapshot loaded = Load();
+                PublishSessions(loaded);
+                return loaded;
+            });
             _latest = snapshot;
             Render(snapshot, DateTimeOffset.Now);
             RaiseAlerts(snapshot);
@@ -145,7 +154,10 @@ internal sealed class TrayController : IDisposable
             // Read every refresh, so fixing a broken file takes effect without a restart.
             Settings settings = Settings.Load(_settingsPath);
             LoadedState? current = SessionStore.LoadCurrent(_sources);
-            return new BridgeSnapshot(current, current is null ? [] : SessionStore.LoadSessions(_sources, now, settings.SessionWindow), null, settings);
+            bool skipped = false;
+            IReadOnlyList<SessionSnapshot> sessions =
+                current is null ? [] : SessionStore.LoadSessions(_sources, now, settings.SessionWindow, out skipped);
+            return new BridgeSnapshot(current, sessions, null, settings, skipped);
         }
         catch (SettingsException e)
         {
@@ -157,6 +169,26 @@ internal sealed class TrayController : IDisposable
             _lastDiscovery = DateTimeOffset.MinValue;
             Trace.TraceWarning("TokenMojo: cannot read bridge files: {0}", e.Message);
             return new BridgeSnapshot(null, [], e.Message, null);
+        }
+    }
+
+    // Off the UI thread, one refresh at a time. A refresh that could not read everything leaves the last file alone, so
+    // a reader never sees an open session vanish for one refresh; a failed write is retried on the next refresh.
+    private void PublishSessions(BridgeSnapshot snapshot)
+    {
+        if (snapshot.Settings is null || snapshot.Skipped) return;
+        DateTimeOffset now = DateTimeOffset.Now;
+        IReadOnlyList<SnapshotSession> entries = SessionSnapshotFile.Entries(snapshot.Sessions, now);
+        if (!SessionSnapshotFile.ShouldWrite(_publishedSessions, entries, _sessionsWrittenAt, now)) return;
+        try
+        {
+            SessionSnapshotFile.Write(_sessionsPath, SessionSnapshotFile.Build(entries, now));
+            _publishedSessions = entries;
+            _sessionsWrittenAt = now;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning("TokenMojo: cannot write {0}: {1}", _sessionsPath, e.Message);
         }
     }
 
@@ -261,5 +293,7 @@ internal sealed class TrayController : IDisposable
         Render(_latest, DateTimeOffset.Now);
     }
 
-    private sealed record BridgeSnapshot(LoadedState? Current, IReadOnlyList<SessionSnapshot> Sessions, string? Error, Settings? Settings);
+    // Skipped: a source or session could not be read this time, so Sessions may be missing some that are still there.
+    private sealed record BridgeSnapshot(
+        LoadedState? Current, IReadOnlyList<SessionSnapshot> Sessions, string? Error, Settings? Settings, bool Skipped = false);
 }

@@ -113,6 +113,76 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadSessions_EverySessionRead_ReportsNothingSkipped()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        _temp.Write("win/cctokmon-sessions/a.events", """{"t":1,"e":"Stop"}""", Now);
+
+        // Act
+        SessionStore.LoadSessions([_temp.Source("win"), _temp.Source("missing")], Now, Window, out bool skipped);
+
+        // Assert
+        Assert.False(skipped);
+    }
+
+    [Fact]
+    public void LoadSessions_UndecodableSessionFile_ReportsNothingSkipped()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/garbage.json", "not json", Now);
+
+        // Act
+        SessionStore.LoadSessions([_temp.Source("win")], Now, Window, out bool skipped);
+
+        // Assert
+        Assert.False(skipped);
+    }
+
+    [Fact]
+    public void LoadSessions_UnreadableSessionFile_ReportsASkip()
+    {
+        // Arrange
+        string locked = _temp.Write("win/cctokmon-sessions/locked.json", Payloads.ForSession("locked"), Now);
+        using IDisposable denied = TempDir.DenyRead(locked);
+
+        // Act
+        SessionStore.LoadSessions([_temp.Source("win")], Now, Window, out bool skipped);
+
+        // Assert
+        Assert.True(skipped);
+    }
+
+    [Fact]
+    public void LoadSessions_UnreadableEventsFile_ReportsASkip()
+    {
+        // Arrange
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        string events = _temp.Write("win/cctokmon-sessions/a.events", """{"t":1,"e":"Stop"}""", Now);
+        using IDisposable denied = TempDir.DenyRead(events);
+
+        // Act
+        SessionStore.LoadSessions([_temp.Source("win")], Now, Window, out bool skipped);
+
+        // Assert
+        Assert.True(skipped);
+    }
+
+    [Fact]
+    public void LoadSessions_SourceThatCannotBeListed_ReportsASkip()
+    {
+        // Arrange
+        _temp.Write("wsl/cctokmon-sessions/b.json", Payloads.ForSession("b"), Now);
+        using IDisposable denied = TempDir.DenyRead(Path.Combine(_temp.Path, "wsl", "cctokmon-sessions"));
+
+        // Act
+        SessionStore.LoadSessions([_temp.Source("wsl")], Now, Window, out bool skipped);
+
+        // Assert
+        Assert.True(skipped);
+    }
+
+    [Fact]
     public void LoadSessions_SessionsDirNotCreatedYet_ReturnsEmpty()
     {
         // Act

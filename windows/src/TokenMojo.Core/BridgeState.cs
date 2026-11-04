@@ -11,7 +11,8 @@ public sealed record BridgeState(
     BridgeCost? Cost,
     BridgeContextWindow? ContextWindow,
     BridgeRateLimits? RateLimits,
-    string? TranscriptPath = null)
+    string? TranscriptPath = null,
+    BridgeWorktree? Worktree = null)
 {
     private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
@@ -21,7 +22,13 @@ public sealed record BridgeState(
 
 public sealed record BridgeModel(string? DisplayName);
 
-public sealed record BridgeWorkspace(string? CurrentDir, string? ProjectDir);
+public sealed record BridgeWorkspace(string? CurrentDir, string? ProjectDir, BridgeRepo? Repo = null);
+
+/// <summary>The repository the session is in, as Claude Code reads it from the git remote.</summary>
+public sealed record BridgeRepo(string? Host, string? Owner, string? Name);
+
+/// <summary>The worktree Claude Code started the session in (claude -w).</summary>
+public sealed record BridgeWorktree(string? Name);
 
 public sealed record BridgeCost(double? TotalCostUsd, long? TotalLinesAdded, long? TotalLinesRemoved);
 
