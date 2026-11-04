@@ -1,6 +1,4 @@
-using System.ComponentModel;
 using System.Diagnostics;
-using System.IO;
 using TokenMojo.Core;
 
 namespace TokenMojo;
@@ -31,13 +29,21 @@ internal sealed class LinkHandler(string settingsPath, ClaudeDirLocator locator,
                 _ => parsed.Problem,
             };
         }
-        // The link arrives in an event handler: nothing may escape it.
-        catch (Exception e) when (e is Win32Exception or InvalidOperationException or IOException or UnauthorizedAccessException or AggregateException)
+        // Nobody awaits this task, so whatever fails here must be traced and shown rather than lost with it.
+        catch (Exception e)
         {
-            Trace.TraceWarning("TokenMojo: cannot follow a link: {0}", e.Message);
+            Trace.TraceWarning("TokenMojo: cannot follow a link: {0}", e);
             problem = $"Could not follow the link: {e.Message}";
         }
-        if (problem is not null) showProblem(problem);
+        if (problem is null) return;
+        try
+        {
+            showProblem(problem);
+        }
+        catch (Exception e)
+        {
+            Trace.TraceWarning("TokenMojo: cannot show a link problem ({0}): {1}", problem, e);
+        }
     }
 
     private async Task<string?> LaunchAsync(LaunchLink link)

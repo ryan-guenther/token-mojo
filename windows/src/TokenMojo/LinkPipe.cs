@@ -18,14 +18,13 @@ internal static class LinkPipe
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
-    private static readonly string Name = BuildName();
 
-    /// <summary>Sends the link to the running TokenMojo. Returns what to show when it could not, else null.</summary>
+    /// <summary>Sends the link to the running TokenMojo. Returns what to show when it could not, else null; never throws.</summary>
     public static string? Send(string link)
     {
         try
         {
-            using NamedPipeClientStream pipe = new(".", Name, PipeDirection.Out, PipeOptions.CurrentUserOnly);
+            using NamedPipeClientStream pipe = new(".", BuildName(), PipeDirection.Out, PipeOptions.CurrentUserOnly);
             pipe.Connect(ConnectTimeout);
             // This process was started for the user's click, so it may let the running one bring a window forward.
             if (Native.GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint serverId)) Native.AllowSetForegroundWindow(serverId);
@@ -34,9 +33,10 @@ internal static class LinkPipe
             pipe.Flush();
             return null;
         }
-        catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
+        // Called from App.OnStartup, which must not fail over a link: anything, the pipe name included, is reported.
+        catch (Exception e)
         {
-            Trace.TraceWarning("TokenMojo: cannot pass the link to the running TokenMojo: {0}", e.Message);
+            Trace.TraceWarning("TokenMojo: cannot pass the link to the running TokenMojo: {0}", e);
             return $"Could not pass the link to the running TokenMojo: {e.Message}";
         }
     }
@@ -71,9 +71,23 @@ internal static class LinkPipe
                     return;
                 }
             }
+            catch (Exception e)
+            {
+                // Anything else, from the pipe name, the pipe or the callback, must not end the server for the life of the process.
+                Trace.TraceWarning("TokenMojo: link server failed, retrying: {0}", e);
+                try
+                {
+                    await Task.Delay(RetryDelay, stop);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
         }
     }
 
+    // Built on each use, inside the callers' try blocks, so a failure to read the user or session is caught there.
     private static string BuildName()
     {
         using WindowsIdentity user = WindowsIdentity.GetCurrent();
@@ -85,7 +99,7 @@ internal static class LinkPipe
     private static async Task<string?> ReceiveOneAsync(CancellationToken stop)
     {
         await using NamedPipeServerStream pipe = new(
-            Name, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            BuildName(), PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         await pipe.WaitForConnectionAsync(stop);
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(stop);
         timeout.CancelAfter(ReadTimeout);
