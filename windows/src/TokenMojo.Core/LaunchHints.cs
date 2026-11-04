@@ -48,13 +48,23 @@ public static partial class LaunchHints
 
     private static LaunchHint ForPullRequest(Match pullRequest, IReadOnlyList<RepoInfo> repos)
     {
-        string repo = $"{pullRequest.Groups[1].Value}/{pullRequest.Groups[2].Value}";
+        string owner = pullRequest.Groups[1].Value;
+        string repo = pullRequest.Groups[2].Value;
         string number = pullRequest.Groups[3].Value;
         string worktree = $"pr-{number}";
-        // A clone of the repository itself beats a fork that has it as another remote, such as upstream.
-        string? folder = (repos.FirstOrDefault(candidate => HasRemote(candidate, repo, originOnly: true))
-            ?? repos.FirstOrDefault(candidate => HasRemote(candidate, repo, originOnly: false)))?.Path;
-        return new LaunchHint(folder, worktree, Describe($"Pull request {repo}#{number}", folder, worktree));
+        string? folder = RepositoryFolder(repos, owner, repo);
+        return new LaunchHint(folder, worktree, Describe($"Pull request {owner}/{repo}#{number}", folder, worktree));
+    }
+
+    /// <summary>
+    /// The folder of the repository a GitHub owner/repo is worked on in, matched ignoring case; null when none is.
+    /// A clone of the repository itself beats a fork that has it as another remote, such as upstream.
+    /// </summary>
+    public static string? RepositoryFolder(IReadOnlyList<RepoInfo> repos, string owner, string repo)
+    {
+        string ownerAndRepo = $"{owner}/{repo}";
+        return (repos.FirstOrDefault(candidate => HasRemote(candidate, ownerAndRepo, originOnly: true))
+            ?? repos.FirstOrDefault(candidate => HasRemote(candidate, ownerAndRepo, originOnly: false)))?.Path;
     }
 
     private static string Describe(string source, string? folder, string worktree) =>

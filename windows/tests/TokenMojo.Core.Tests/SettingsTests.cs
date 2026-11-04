@@ -311,4 +311,129 @@ public sealed class SettingsTests : IDisposable
         Assert.DoesNotContain("longTurn\"", written);
         Assert.DoesNotContain("sessionWindow", written);
     }
+
+    [Fact]
+    public void Load_NoFileYet_HasNoActionsAndNoAllowedOwners()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "settings.json");
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Empty(settings.Actions);
+        Assert.Empty(settings.AllowedOwners);
+    }
+
+    [Fact]
+    public void Load_FileWithActionsAndAllowedOwners_UsesThem()
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", """
+            {"actions": {"review": "Review {url}", "merge-main": "Merge main into {url}"}, "allowedOwners": ["octo", "Octo-Cat"]}
+            """, DateTimeOffset.UtcNow);
+
+        // Act
+        Settings settings = Settings.Load(path);
+
+        // Assert
+        Assert.Equal(new Dictionary<string, string> { ["review"] = "Review {url}", ["merge-main"] = "Merge main into {url}" }, settings.Actions);
+        Assert.Equal(["octo", "Octo-Cat"], settings.AllowedOwners);
+    }
+
+    [Theory]
+    [InlineData("""{"actions": null}""")]
+    [InlineData("""{"allowedOwners": null}""")]
+    public void Load_NullActionsOrAllowedOwners_ThrowsNamingTheFile(string contents)
+    {
+        // Arrange
+        string path = _temp.Write("settings.json", contents, DateTimeOffset.UtcNow);
+
+        // Act
+        SettingsException error = Assert.Throws<SettingsException>(() => Settings.Load(path));
+
+        // Assert
+        Assert.Contains(path, error.Message);
+    }
+
+    [Theory]
+    [InlineData("Review", "actions key 'Review' must be up to 32 lowercase letters, digits and hyphens, such as review")]
+    [InlineData("-review", "actions key '-review' must be up to 32 lowercase letters, digits and hyphens, such as review")]
+    [InlineData("", "actions key '' must be up to 32 lowercase letters, digits and hyphens, such as review")]
+    public void Problem_BadActionName_NamesIt(string name, string expected)
+    {
+        // Arrange
+        Settings settings = new() { Actions = new Dictionary<string, string> { [name] = "Review {url}" } };
+
+        // Act / Assert
+        Assert.Equal(expected, settings.Problem());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Review the pull request")]
+    [InlineData("Review {URL}")]
+    public void Problem_TemplateWithoutUrlPlaceholder_NamesTheAction(string template)
+    {
+        // Arrange
+        Settings settings = new() { Actions = new Dictionary<string, string> { ["review"] = template } };
+
+        // Act / Assert
+        Assert.Equal("actions.review must be a prompt containing {url}", settings.Problem());
+    }
+
+    [Theory]
+    [InlineData("Review {url}\nthen report")]
+    [InlineData("Review\t{url}")]
+    public void Problem_TemplateWithControlCharacters_NamesTheAction(string template)
+    {
+        // Arrange
+        Settings settings = new() { Actions = new Dictionary<string, string> { ["review"] = template } };
+
+        // Act / Assert
+        Assert.Equal("actions.review must be one line, without tabs or other control characters", settings.Problem());
+    }
+
+    [Theory]
+    [InlineData("octo_cat")]
+    [InlineData("-octo")]
+    [InlineData("")]
+    public void Problem_BadAllowedOwner_NamesIt(string owner)
+    {
+        // Arrange
+        Settings settings = new() { AllowedOwners = [owner] };
+
+        // Act / Assert
+        Assert.Equal($"allowedOwners entry '{owner}' must be a GitHub user or organization name", settings.Problem());
+    }
+
+    [Fact]
+    public void Save_ActionsAndAllowedOwners_WritesThemAndThenLoadsThem()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "settings.json");
+        Settings settings = new() { Actions = new Dictionary<string, string> { ["review"] = "Review {url}" }, AllowedOwners = ["octo"] };
+
+        // Act
+        settings.Save(path);
+        Settings loaded = Settings.Load(path);
+
+        // Assert
+        Assert.Equal(new Dictionary<string, string> { ["review"] = "Review {url}" }, loaded.Actions);
+        Assert.Equal(["octo"], loaded.AllowedOwners);
+    }
+
+    [Fact]
+    public void Save_DefaultActionsAndAllowedOwners_LeavesThemOut()
+    {
+        // Arrange
+        string path = Path.Combine(_temp.Path, "settings.json");
+
+        // Act
+        new Settings().Save(path);
+
+        // Assert
+        Assert.Equal("{}", File.ReadAllText(path));
+    }
 }

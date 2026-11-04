@@ -103,10 +103,7 @@ public partial class LauncherWindow : Window
     private LauncherData LoadData()
     {
         Settings settings = Settings.Load(_settingsPath);
-        IReadOnlyList<string> running = _wsl.Running();
-        IReadOnlyList<ClaudeSource> sources = _locator.Locate();
-        bool windowsHasClaude = Directory.Exists(Path.Combine(SessionControl.WindowsHome, ".claude"));
-        IReadOnlyList<string> targets = LaunchTargets.Targets(running, sources, windowsHasClaude);
+        (IReadOnlyList<string> targets, IReadOnlyList<ClaudeSource> sources) = SessionStarter.Locate(_wsl, _locator);
         return new LauncherData(settings, targets, sources, SessionStore.LoadSessions(sources, DateTimeOffset.Now, settings.SessionWindow));
     }
 
@@ -198,8 +195,7 @@ public partial class LauncherWindow : Window
     private Task<LaunchUser> ChooseUserAsync(string distro)
     {
         IReadOnlyList<ClaudeSource> sources = _sources;
-        WslTmInspector inspector = new();
-        return Task.Run(() => LaunchTargets.ChooseUser(sources, distro, source => inspector.Inspect(distro, source.User!)));
+        return Task.Run(() => SessionStarter.ChooseUser(sources, distro));
     }
 
     // Usable at once with the default and recent folders; the scan adds the repositories when it finishes.
@@ -310,7 +306,7 @@ public partial class LauncherWindow : Window
         if (LaunchTargets.IsWindows(distro))
         {
             string prompt = PromptBox.Text;
-            return await Task.Run(() => TryLaunchNative(folder, worktree, prompt));
+            return await Task.Run(() => SessionStarter.TryLaunchNative(folder, worktree, prompt));
         }
         if (_user is null)
         {
@@ -322,48 +318,7 @@ public partial class LauncherWindow : Window
             if (choice.Source is null) return choice.Problem;
         }
         LaunchRequest request = new(distro, _user!, folder, worktree, PromptBox.Text, _home);
-        return await Task.Run(() => TryLaunch(request));
-    }
-
-    private static string? TryLaunch(LaunchRequest request)
-    {
-        try
-        {
-            // Checked again: it was inspected when the window opened, which may be a while ago.
-            if (SessionControl.TmProblem(request.Distro, request.User, request.Home) is { } problem) return problem;
-            string? start = LinuxFolder.Expand(request.Folder, request.Home);
-            if (start is null || !Directory.Exists(WslPaths.SharePath(request.Distro, start)))
-                return $"The folder does not exist in {request.Distro}: {request.Folder}";
-            SessionLauncher.Launch(request, new WslPromptHandoff(), TerminalProcess.Start);
-            return null;
-        }
-        catch (Exception e) when (e is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
-        {
-            System.Diagnostics.Trace.TraceWarning("TokenMojo: cannot start a session: {0}", e.Message);
-            return $"Could not start the session: {e.Message}";
-        }
-    }
-
-    // Claude Code on Windows itself: the prompt file goes straight into Git Bash's home and Git Bash runs tm.
-    private static string? TryLaunchNative(string folder, string? worktree, string prompt)
-    {
-        try
-        {
-            // Checked again: Git Bash or tm may have changed since the window opened.
-            (string? bash, string? problem) = SessionControl.NativeCheck();
-            if (problem is not null) return problem;
-            string home = SessionControl.WindowsHome;
-            string start = WindowsFolder.Expand(folder, home);
-            if (!Directory.Exists(start)) return $"The folder does not exist: {folder}";
-            LaunchRequest request = new(LaunchTargets.Windows, "", start, worktree, prompt, home);
-            SessionLauncher.LaunchNative(request, bash!, new LocalPromptHandoff(SessionControl.GitBashHome), TerminalProcess.Start);
-            return null;
-        }
-        catch (Exception e) when (e is Win32Exception or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
-        {
-            System.Diagnostics.Trace.TraceWarning("TokenMojo: cannot start a session: {0}", e.Message);
-            return $"Could not start the session: {e.Message}";
-        }
+        return await Task.Run(() => SessionStarter.TryLaunch(request));
     }
 
     private async void OnStart(object sender, RoutedEventArgs e) => await StartAsync();

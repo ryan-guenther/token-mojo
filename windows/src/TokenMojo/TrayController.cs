@@ -19,6 +19,9 @@ internal sealed class TrayController : IDisposable
         "No bridge data yet. Enable the statusline bridge with install.sh, then start a Claude Code session.";
 
     private static readonly TimeSpan BalloonDuration = TimeSpan.FromSeconds(10);
+    // Windows shows at most this much of a balloon's text.
+    private const int BalloonTextLimit = 255;
+    private const string LinkProblemTitle = "TokenMojo could not follow the link";
 
     private readonly string _windowsHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private readonly string _settingsPath = Path.Combine(
@@ -29,6 +32,7 @@ internal sealed class TrayController : IDisposable
     private readonly DispatcherTimer _timer = new() { Interval = RefreshInterval };
     private readonly FlyoutWindow _flyout = new();
     private readonly WslDistros _wsl = new();
+    private readonly LinkHandler _links;
     private PopOutWindow? _popOut;
     private LauncherWindow? _launcher;
     private SettingsWindow? _settingsWindow;
@@ -42,6 +46,7 @@ internal sealed class TrayController : IDisposable
     public TrayController()
     {
         _locator = new ClaudeDirLocator(_windowsHome, _wsl, new WslAccounts(), Environment.GetEnvironmentVariable);
+        _links = new LinkHandler(_settingsPath, _locator, _wsl, ShowLinkProblem);
         _flyout.PopOutRequested += (_, _) => ShowPopOut();
         _flyout.NewSessionRequested += (_, _) => ShowLauncher();
         _flyout.SettingsRequested += (_, _) => ShowSettings();
@@ -86,6 +91,17 @@ internal sealed class TrayController : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>Follows a tokenmojo:// link; its problems are shown as a balloon. Call on the UI thread.</summary>
+    public Task FollowLinkAsync(string link) => _links.HandleAsync(link);
+
+    // A click on this balloon opens the dashboard, as one about no particular session does.
+    private void ShowLinkProblem(string problem)
+    {
+        _balloonSessionId = null;
+        string text = problem.Length > BalloonTextLimit ? problem[..(BalloonTextLimit - 1)] + "…" : problem;
+        _notifyIcon.ShowBalloonTip((int)BalloonDuration.TotalMilliseconds, LinkProblemTitle, text, Forms.ToolTipIcon.Warning);
     }
 
     public void Dispose()

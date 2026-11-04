@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace TokenMojo;
 
-/// <summary>The few Win32 calls WPF has no API for: exact window placement, per-monitor DPI, DWM chrome and other programs' windows.</summary>
+/// <summary>The few Win32 calls WPF has no API for: exact window placement, per-monitor DPI, DWM chrome, other programs' windows and the foreground handover.</summary>
 internal static partial class Native
 {
     public const uint NoSizeNoZOrderNoActivate = 0x0001 | 0x0004 | 0x0010;
@@ -65,6 +65,14 @@ internal static partial class Native
 
     [LibraryImport("user32.dll")]
     public static partial IntPtr GetForegroundWindow();
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AllowSetForegroundWindow(uint processId);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetNamedPipeServerProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint processId);
 
     [LibraryImport("dwmapi.dll")]
     public static partial int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
