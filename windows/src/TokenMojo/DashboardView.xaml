@@ -117,11 +117,17 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <Grid Margin="14">
+    <Grid x:Name="Root" Margin="14">
         <TextBlock x:Name="MessageText" TextWrapping="Wrap" Visibility="Collapsed" />
 
-        <!-- A grid, not a stack, so a resized pop-out gives its extra height to the sessions -->
+        <!-- A grid, not a stack, so a resized pop-out gives its extra height to the sessions;
+             a wide one moves the sessions card into the second column (SetWide) -->
         <Grid x:Name="Panel">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="TilesColumn" Width="*" />
+                <ColumnDefinition x:Name="SessionsColumn" Width="0" />
+            </Grid.ColumnDefinitions>
+            <Grid x:Name="Tiles">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -240,7 +246,7 @@
             </UniformGrid>
 
             <!-- Sessions from the last sessionHours hours -->
-            <Border Grid.Row="4" Style="{StaticResource Card}">
+            <Border x:Name="SessionsCard" Grid.Row="4" Style="{StaticResource Card}">
                 <DockPanel>
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
                         <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE710;" Margin="6,0,0,0"
@@ -303,6 +309,7 @@
                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE823;" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
                 <TextBlock Text="{Binding UpdatedText}" Style="{StaticResource Secondary}" />
             </StackPanel>
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>
