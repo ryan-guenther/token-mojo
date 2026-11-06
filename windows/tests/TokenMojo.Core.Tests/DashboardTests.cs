@@ -506,6 +506,25 @@ public sealed class DashboardTests : IDisposable
         Assert.Equal(expected, row.StatusText);
     }
 
+    [Theory]
+    [InlineData(0, 1, "Working: 1 shell")]
+    [InlineData(0, 2, "Working: 2 shells")]
+    [InlineData(2, 1, "Working: 2 subagents, 1 shell")]
+    public void Build_WorkingSessionWithShells_SaysHowManyInTheRow(int subagents, int shells, string expected)
+    {
+        // Arrange
+        SessionSnapshot session = Session("a", 1, minutesAgo: 1) with
+        {
+            Status = SessionStatus.Working, Subagents = subagents, Shells = shells,
+        };
+
+        // Act
+        SessionRowModel row = OnlyRow(Build(BridgeState.Parse(Payloads.Full), [session]));
+
+        // Assert
+        Assert.Equal(expected, row.StatusText);
+    }
+
     [Fact]
     public void Build_NeedsInputSessionWithSubagents_KeepsThePlainWording()
     {

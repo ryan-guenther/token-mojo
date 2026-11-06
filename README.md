@@ -241,13 +241,14 @@ mkdir -p ~/.config/git && echo '.claude/worktrees/' >> ~/.config/git/ignore
 
 ### Session status
 
-`cctokmon-hook.sh` is a separate Claude Code hook that logs what each session is doing, one line per event, in `~/.claude/cctokmon-sessions/<session_id>.events` (event name and time only, never your prompts or tool input). TokenMojo reads the end of that log to get the status. The installer offers to register it for ten events, adding an entry beside any hooks you already have:
+`cctokmon-hook.sh` is a separate Claude Code hook that logs what each session is doing, one line per event, in `~/.claude/cctokmon-sessions/<session_id>.events` (event name and time only, never your prompts or tool input; for background shells, only their task ids). TokenMojo reads the end of that log to get the status. The installer offers to register it for ten events, adding an entry beside any hooks you already have:
 
 | Event | Status |
 |---|---|
 | `SessionStart` (except after a compact), `Stop` | ready |
 | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | working |
 | `SubagentStart`, `SubagentStop`, and any event from a subagent | keep the session working after the main agent's `Stop`, until the last subagent is done |
+| `PostToolUse` that leaves a shell running in the background, and the `UserPromptSubmit` that delivers its task notification | keep the session working after the main agent's `Stop`, until the last background shell has finished |
 | `Notification` for a permission prompt or other question | needs input |
 | `SessionEnd` | ended |
 
@@ -255,9 +256,11 @@ The hook never prints anything and always exits 0, so it cannot interrupt a sess
 
 A background subagent keeps working after the main agent's `Stop`, and long model calls fire no events. The main agent's own events set its state; subagents (events with an agent id) never start or extend a turn. While the main agent is ready and a subagent is live, the row shows "working" and says how many subagents. A subagent is live from its first event until its `SubagentStop`, and any event it sends (including its tool calls) refreshes it. A subagent that sends nothing for 10 minutes is treated as finished, so a lost `SubagentStop` cannot pin the session. The "Finished" alert fires when the row goes back to ready, measured from the start of the main agent's turn. It fires at most once per turn, even if a subagent goes quiet, reappears and stops again. Re-running the installer adds the two subagent events to an install that has the original eight.
 
+A shell the main agent runs in the background works the same way: it is live from the tool call that started it until the task notification Claude Code sends when it finishes, and the row says how many shells, such as "Working: 1 shell". A shell a subagent starts is covered by that subagent.
+
 Each prompt has an owner: the subagent that raised it, or the main agent. The main agent's prompt clears when the main agent next starts or finishes a tool, which is what follows an approval or a denial; a subagent's tool events do not clear it. A subagent's prompt clears only when that same subagent finishes a tool, stops, or goes quiet for 10 minutes, and the row returns to what it was doing before. A session that has ended stays ended until it starts again, and a prompt alone does not revive it.
 
-Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. If a second prompt arrives while one is open, the newest is shown, and when it clears the earlier one is not shown again. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt, and that prompt continues the old turn's timer: a short reply after a long idle gap can raise a "Finished" alert. A subagent that crashes without a `SubagentStop` keeps the row "working" for at most 10 minutes after its last event. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
+Limits: with parallel tool calls, another tool finishing can clear needs input while a prompt is still open. If a second prompt arrives while one is open, the newest is shown, and when it clears the earlier one is not shown again. Pressing Esc to interrupt a turn fires no hook, so the session shows "working" until your next prompt, and that prompt continues the old turn's timer: a short reply after a long idle gap can raise a "Finished" alert. A subagent that crashes without a `SubagentStop` keeps the row "working" for at most 10 minutes after its last event. A background shell has no expiry, since it can legitimately run for hours: one whose task notification never arrives keeps the row "working" until the session ends or starts again. A session that crashes never sends `SessionEnd` and keeps its last status until it leaves the 12-hour list.
 
 ---
 

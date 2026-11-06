@@ -196,10 +196,18 @@ public static class Dashboard
     {
         SessionStatus.NeedsInput => "Needs input",
         SessionStatus.Ready => "Ready",
-        SessionStatus.Working when session.Subagents > 0 => $"Working: {session.Subagents} {(session.Subagents == 1 ? "subagent" : "subagents")}",
+        SessionStatus.Working when session.Subagents > 0 || session.Shells > 0 => "Working: " + string.Join(", ",
+            new[] { Count(session.Subagents, "subagent"), Count(session.Shells, "shell") }.OfType<string>()),
         SessionStatus.Working => "Working",
         SessionStatus.Ended => "Ended",
         _ => session.IsActive(now) ? "Active in the last 10 minutes" : "Idle",
+    };
+
+    private static string? Count(int count, string noun) => count switch
+    {
+        0 => null,
+        1 => $"1 {noun}",
+        _ => $"{count} {noun}s",
     };
 
     private static string AbbreviateHome(string directory, string windowsHome)

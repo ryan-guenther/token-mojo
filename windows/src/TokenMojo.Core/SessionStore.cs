@@ -5,7 +5,8 @@ namespace TokenMojo.Core;
 public sealed record SessionSnapshot(
     string Id, BridgeState State, DateTimeOffset Updated,
     SessionStatus Status = SessionStatus.None, DateTimeOffset? StatusSince = null, DateTimeOffset? TurnStarted = null,
-    string? Distro = null, string? User = null, string? Home = null, int Subagents = 0, string? FirstPrompt = null)
+    string? Distro = null, string? User = null, string? Home = null, int Subagents = 0, string? FirstPrompt = null,
+    int Shells = 0)
 {
     /// <summary>The folder to resume or open: where Claude was started, else where it is now.</summary>
     public string? ResumeFolder =>
@@ -89,7 +90,7 @@ public static class SessionStore
                     new SessionSnapshot(
                         Path.GetFileNameWithoutExtension(file.Name), state, updated,
                         events?.Status ?? SessionStatus.None, events?.Since, events?.TurnStarted, source.Distro, source.User, source.Home,
-                        events?.Subagents ?? 0, FirstPrompt(source, state)),
+                        events?.Subagents ?? 0, FirstPrompt(source, state), events?.Shells ?? 0),
                     eventsWritten));
             }
         }

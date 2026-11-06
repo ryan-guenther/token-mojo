@@ -41,8 +41,17 @@ mapfile -t parsed < <(printf '%s' "$input" | jq -r --arg now "$(date +%s)" '
         | index($event))
     | def field($key; $name): if (.[$key] // "") != "" then {($name): (.[$key] | tostring | .[0:100])} else {} end;
     (.session_id // "" | tostring),
+    # b: the task id of a shell a tool call left running in the background. d: the task ids a task notification
+    # reports finished; only these ids are taken from a prompt, never its text.
+    def started: if $event == "PostToolUse" and (.tool_response | type) == "object"
+        and ((.tool_response.backgroundTaskId // "") | tostring) != ""
+        then {b: (.tool_response.backgroundTaskId | tostring | .[0:100])} else {} end;
+    def finished: if $event == "UserPromptSubmit" and (.prompt | type) == "string"
+        then ([.prompt | scan("<task-id>([A-Za-z0-9_-]+)</task-id>") | .[0]] | join(" ") | .[0:100])
+            as $ids | if $ids != "" then {d: $ids} else {} end
+        else {} end;
     ({t: ($now | tonumber), e: $event}
-        + field("agent_id"; "a") + field("notification_type"; "n") + field("source"; "s") | tojson)
+        + field("agent_id"; "a") + field("notification_type"; "n") + field("source"; "s") + started + finished | tojson)
 ' 2>/dev/null)
 
 # A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR.
