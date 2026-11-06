@@ -138,7 +138,10 @@ set_title "TM $name ${session_id:0:8}"
 # No -n: a named session gets no generated title, so every session in a folder would share its name.
 claude_args=(--session-id "$session_id")
 if [[ -n "$worktree" ]]; then claude_args+=(-w "$worktree"); fi
+# The hook marks the session's start as working while Claude Code loads, until it submits the prompt.
+unset CCTOKMON_LAUNCH_PROMPT
 if [[ -n "$prompt" ]]; then
     claude_args+=(-- "$prompt")
+    export CCTOKMON_LAUNCH_PROMPT=1
 fi
 exec claude "${claude_args[@]}"

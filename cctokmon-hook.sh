@@ -35,7 +35,7 @@ input=$(cat)
 # One jq call prints the session id, then the event line (nothing for events we do not log).
 # Each optional field is cut to 100 characters, keeping a line far below the 4 KB that one
 # append writes atomically.
-mapfile -t parsed < <(printf '%s' "$input" | jq -r --arg now "$(date +%s)" '
+mapfile -t parsed < <(printf '%s' "$input" | jq -r --arg now "$(date +%s)" --arg launched "${CCTOKMON_LAUNCH_PROMPT:-}" '
     (.hook_event_name // "") as $event
     | select(["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "SubagentStart", "SubagentStop", "Stop", "SessionEnd"]
         | index($event))
@@ -50,8 +50,10 @@ mapfile -t parsed < <(printf '%s' "$input" | jq -r --arg now "$(date +%s)" '
         then ([.prompt | scan("<task-id>([A-Za-z0-9_-]+)</task-id>") | .[0]] | join(" ") | .[0:100])
             as $ids | if $ids != "" then {d: $ids} else {} end
         else {} end;
+    # p: tm started this session with a prompt, which Claude Code submits once it has loaded.
+    def prompted: if $event == "SessionStart" and .source == "startup" and $launched == "1" then {p: "1"} else {} end;
     ({t: ($now | tonumber), e: $event}
-        + field("agent_id"; "a") + field("notification_type"; "n") + field("source"; "s") + started + finished | tojson)
+        + field("agent_id"; "a") + field("notification_type"; "n") + field("source"; "s") + started + finished + prompted | tojson)
 ' 2>/dev/null)
 
 # A native jq.exe under Git Bash ends its lines with CRLF, which mapfile -t leaves as a trailing CR.
