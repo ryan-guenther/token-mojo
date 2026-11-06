@@ -120,9 +120,18 @@
     <Grid Margin="14">
         <TextBlock x:Name="MessageText" TextWrapping="Wrap" Visibility="Collapsed" />
 
-        <StackPanel x:Name="Panel">
+        <!-- A grid, not a stack, so a resized pop-out gives its extra height to the sessions -->
+        <Grid x:Name="Panel">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <!-- Header: model, session name, working directory -->
-            <Grid Margin="0,0,0,12">
+            <Grid Grid.Row="0" Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -151,7 +160,7 @@
             </Grid>
 
             <!-- 5-hour and 7-day rings; absent for API-key users -->
-            <ItemsControl ItemsSource="{Binding Limits}" Visibility="{Binding Limits, Converter={StaticResource VisibleWhen}}">
+            <ItemsControl Grid.Row="1" ItemsSource="{Binding Limits}" Visibility="{Binding Limits, Converter={StaticResource VisibleWhen}}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <UniformGrid Rows="1" />
@@ -176,7 +185,7 @@
             </ItemsControl>
 
             <!-- Context window -->
-            <Border Style="{StaticResource Card}" Visibility="{Binding Context, Converter={StaticResource VisibleWhen}}">
+            <Border Grid.Row="2" Style="{StaticResource Card}" Visibility="{Binding Context, Converter={StaticResource VisibleWhen}}">
                 <StackPanel>
                     <DockPanel Margin="0,0,0,8">
                         <TextBlock DockPanel.Dock="Right" Text="{Binding Context.Text}" Style="{StaticResource Digits}" FontSize="12" />
@@ -191,7 +200,7 @@
             </Border>
 
             <!-- Stat tiles -->
-            <UniformGrid Columns="2" Margin="0,0,-10,0">
+            <UniformGrid Grid.Row="3" Columns="2" Margin="0,0,-10,0">
                 <Border Style="{StaticResource Card}" Padding="10" Margin="0,0,10,10">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Style="{StaticResource Glyph}" Text="&#xE8C7;" FontSize="18" Foreground="#34C759" Margin="0,0,8,0" />
@@ -231,9 +240,9 @@
             </UniformGrid>
 
             <!-- Sessions from the last sessionHours hours -->
-            <Border Style="{StaticResource Card}">
-                <StackPanel>
-                    <DockPanel Margin="0,0,0,4">
+            <Border Grid.Row="4" Style="{StaticResource Card}">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
                         <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE710;" Margin="6,0,0,0"
                                 ToolTip="New session" AutomationProperties.Name="New session" Click="OnNewSession" />
                         <TextBlock DockPanel.Dock="Right" Text="{Binding Sessions.Summary}" Style="{StaticResource Secondary}"
@@ -244,7 +253,7 @@
                         </StackPanel>
                     </DockPanel>
                     <!-- About ten rows; more scroll, so the flyout stays on screen -->
-                    <ScrollViewer MaxHeight="440" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="SessionScroll" MaxHeight="440" VerticalScrollBarVisibility="Auto">
                         <ScrollViewer.Resources>
                             <!-- A thin rounded thumb in the theme's ink, no arrows, like a Windows 11 overlay scrollbar -->
                             <Style TargetType="ScrollBar">
@@ -287,13 +296,13 @@
                             <ItemsControl ItemsSource="{Binding Sessions.ClosedRows}" ItemTemplate="{StaticResource SessionRow}" />
                         </StackPanel>
                     </ScrollViewer>
-                </StackPanel>
+                </DockPanel>
             </Border>
 
-            <StackPanel Orientation="Horizontal">
+            <StackPanel Grid.Row="5" Orientation="Horizontal">
                 <TextBlock Style="{StaticResource Glyph}" Text="&#xE823;" FontSize="11" Foreground="{DynamicResource SecondaryTextBrush}" />
                 <TextBlock Text="{Binding UpdatedText}" Style="{StaticResource Secondary}" />
             </StackPanel>
-        </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

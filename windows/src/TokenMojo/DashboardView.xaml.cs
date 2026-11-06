@@ -25,6 +25,15 @@ public partial class DashboardView : UserControl
         MessageText.Visibility = Visibility.Collapsed;
     }
 
+    /// <summary>
+    /// Fills a window the user sizes, in place of the fixed width and session list height that keep the flyout on screen.
+    /// </summary>
+    public void FillWindow()
+    {
+        Width = double.NaN;
+        SessionScroll.MaxHeight = double.PositiveInfinity;
+    }
+
     public void ShowMessage(string message)
     {
         MessageText.Text = message;

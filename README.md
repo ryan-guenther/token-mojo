@@ -465,7 +465,7 @@ bash uninstall.sh
 
 Removes the symlinks (or Windows launchers) at `~/.local/bin/cctokmon` and `~/.local/bin/tm` (a `tm` that is not cctokmon's is kept), the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook scripts at `~/.claude/cctokmon-hook.sh` and `~/.claude/cctokmon-worktree-init.sh`, and the `statusLine` entry (only when it is cctokmon's own script, not a custom one) and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
 
-On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position) and `%APPDATA%\TokenMojo` (settings).
+On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position and size) and `%APPDATA%\TokenMojo` (settings).
 
 ---
 
