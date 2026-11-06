@@ -295,6 +295,26 @@ public sealed class SessionStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadSessions_BackgroundShellRunningAfterTheMainStop_IsWorkingWithItsCount()
+    {
+        // Arrange
+        ClaudeSource source = _temp.Source("win");
+        long start = Now.AddMinutes(-20).ToUnixTimeSeconds();
+        _temp.Write("win/cctokmon-sessions/a.json", Payloads.ForSession("a"), Now);
+        _temp.Write("win/cctokmon-sessions/a.events", string.Join("\n",
+            $$"""{"t":{{start}},"e":"UserPromptSubmit"}""",
+            $$"""{"t":{{start + 10}},"e":"PostToolUse","b":"shell-1"}""",
+            $$"""{"t":{{start + 20}},"e":"Stop"}""") + "\n", Now);
+
+        // Act
+        SessionSnapshot session = SessionStore.LoadSessions([source], Now, Window).Single();
+
+        // Assert
+        Assert.Equal(SessionStatus.Working, session.Status);
+        Assert.Equal(1, session.Shells);
+    }
+
+    [Fact]
     public void LoadSessions_NoEventsFile_HasNoStatus()
     {
         // Arrange

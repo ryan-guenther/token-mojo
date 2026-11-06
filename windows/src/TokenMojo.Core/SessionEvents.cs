@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace TokenMojo.Core;
 
-public sealed record SessionEventState(SessionStatus Status, DateTimeOffset? Since, DateTimeOffset? TurnStarted, int Subagents = 0);
+public sealed record SessionEventState(SessionStatus Status, DateTimeOffset? Since, DateTimeOffset? TurnStarted, int Subagents = 0, int Shells = 0);
 
 /// <summary>Reduces the lines cctokmon-hook.sh appends to &lt;session_id&gt;.events to the session's current status.</summary>
 public static class SessionEvents
@@ -15,12 +15,13 @@ public static class SessionEvents
 
     /// <summary>
     /// Applies the events in order. Lines that are not a complete event (a write in progress, foreign text) are skipped.
-    /// The main agent's own events drive its state; subagents only keep the session shown as working while they are live.
+    /// The main agent's own events drive its state; subagents and the main agent's background shells only keep the
+    /// session shown as working while they are live.
     /// </summary>
     public static SessionEventState Reduce(IEnumerable<string> lines, DateTimeOffset now)
     {
         SessionEventState none = new(SessionStatus.None, null, null);
-        Tracking tracking = new(none, ImmutableDictionary<string, DateTimeOffset>.Empty, none);
+        Tracking tracking = new(none, ImmutableDictionary<string, DateTimeOffset>.Empty, ImmutableHashSet<string>.Empty, none);
         DateTimeOffset latest = DateTimeOffset.MinValue;
         foreach (string line in lines)
         {
@@ -31,20 +32,21 @@ public static class SessionEvents
         // A now before the last line is clock skew; judging liveness at that earlier time would revive expired subagents.
         DateTimeOffset settledAt = now > latest ? now : latest;
         tracking = Settle(tracking, settledAt);
-        return tracking.Shown with { Subagents = LiveCount(tracking, settledAt) };
+        return tracking.Shown with { Subagents = LiveCount(tracking, settledAt), Shells = tracking.Shells.Count };
     }
 
     private static Tracking Apply(Tracking tracking, HookEvent hookEvent)
     {
         DateTimeOffset t = hookEvent.Time;
         if (hookEvent.Name == "SessionEnd" || (hookEvent.Name == "SessionStart" && hookEvent.Source != "compact"))
-            tracking = tracking with { Subagents = tracking.Subagents.Clear() };
+            tracking = tracking with { Subagents = tracking.Subagents.Clear(), Shells = tracking.Shells.Clear() };
         else if (tracking.Main.Status == SessionStatus.Ended)
             return Show(tracking, t, t);
         else if (hookEvent.Name == "SubagentStop" && hookEvent.Agent is { } stopped)
             tracking = tracking with { Subagents = tracking.Subagents.Remove(stopped) };
         else if (hookEvent.Agent is { } seen)
             tracking = tracking with { Subagents = tracking.Subagents.SetItem(seen, t) };
+        tracking = TrackShells(tracking, hookEvent);
 
         SessionEventState main = tracking.Main;
         SessionEventState next = NextMain(tracking, hookEvent);
@@ -60,6 +62,18 @@ public static class SessionEvents
         }
 
         return Show(tracking with { Main = next, PromptAgent = promptAgent, Interrupted = interrupted }, t, t);
+    }
+
+    // A background shell the main agent started is live until a task notification names it. A subagent's shells are
+    // covered by the subagent's own liveness. There is no expiry: Claude Code itself waits on that notification.
+    private static Tracking TrackShells(Tracking tracking, HookEvent hookEvent)
+    {
+        ImmutableHashSet<string> shells = tracking.Shells;
+        if (hookEvent.Agent is null && hookEvent.Background is { } started)
+            shells = shells.Add(started);
+        if (hookEvent.Finished is { } finished)
+            shells = shells.Except(finished.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return tracking with { Shells = shells };
     }
 
     // Subagents never change the main state. They only release a prompt of their own, and a prompt the main agent
@@ -113,7 +127,9 @@ public static class SessionEvents
     }
 
     private static SessionStatus ShownStatus(Tracking tracking, DateTimeOffset at) =>
-        tracking.Main.Status == SessionStatus.Ready && LiveCount(tracking, at) > 0 ? SessionStatus.Working : tracking.Main.Status;
+        tracking.Main.Status == SessionStatus.Ready && (LiveCount(tracking, at) > 0 || !tracking.Shells.IsEmpty)
+            ? SessionStatus.Working
+            : tracking.Main.Status;
 
     private static int LiveCount(Tracking tracking, DateTimeOffset at) =>
         tracking.Subagents.Values.Count(lastSeen => at - lastSeen < SubagentLifetime);
@@ -166,7 +182,8 @@ public static class SessionEvents
                 return null;
             if (!root.TryGetProperty("e", out JsonElement name) || name.ValueKind != JsonValueKind.String) return null;
             return new HookEvent(
-                DateTimeOffset.FromUnixTimeSeconds(seconds), name.GetString()!, Text(root, "n"), Text(root, "s"), Text(root, "a"));
+                DateTimeOffset.FromUnixTimeSeconds(seconds), name.GetString()!, Text(root, "n"), Text(root, "s"), Text(root, "a"),
+                Text(root, "b"), Text(root, "d"));
         }
         catch (Exception e) when (e is JsonException or ArgumentOutOfRangeException)
         {
@@ -180,10 +197,15 @@ public static class SessionEvents
             : null;
 
     // Main is the main agent's state, Shown what the row displays. PromptAgent is the subagent that raised the open
-    // prompt (null for the main agent) and Interrupted the state that prompt interrupted.
+    // prompt (null for the main agent) and Interrupted the state that prompt interrupted. Shells holds the task ids of
+    // the main agent's live background shells.
     private sealed record Tracking(
-        SessionEventState Main, ImmutableDictionary<string, DateTimeOffset> Subagents, SessionEventState Shown,
+        SessionEventState Main, ImmutableDictionary<string, DateTimeOffset> Subagents, ImmutableHashSet<string> Shells,
+        SessionEventState Shown,
         string? PromptAgent = null, SessionEventState? Interrupted = null);
 
-    private sealed record HookEvent(DateTimeOffset Time, string Name, string? Notification, string? Source, string? Agent);
+    // Background is the task id of a shell a tool call left running; Finished the space-separated task ids a task
+    // notification reports done.
+    private sealed record HookEvent(
+        DateTimeOffset Time, string Name, string? Notification, string? Source, string? Agent, string? Background, string? Finished);
 }

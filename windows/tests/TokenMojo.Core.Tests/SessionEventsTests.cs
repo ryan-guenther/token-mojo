@@ -882,14 +882,116 @@ public class SessionEventsTests
         Assert.Equal(new SessionEventState(SessionStatus.Working, At(900), At(110)), state);
     }
 
+    [Fact]
+    public void Reduce_BackgroundShellAfterStop_StaysWorkingUntilItsNotification()
+    {
+        // Arrange
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "PostToolUse", background: "shell-1"), Line(120, "Stop"),
+        ];
+        string[] notified = [.. lines, Line(5000, "UserPromptSubmit", finished: "shell-1"), Line(5010, "Stop")];
+
+        // Act
+        SessionEventState running = Reduce(lines);
+        SessionEventState done = Reduce(notified);
+
+        // Assert: no expiry, unlike a quiet subagent
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), Shells: 1), running);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(5010), At(5000)), done);
+    }
+
+    [Fact]
+    public void Reduce_OneNotificationFinishingTwoShells_ClearsBoth()
+    {
+        // Arrange
+        string[] lines =
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "PostToolUse", background: "shell-1"),
+            Line(111, "PostToolUse", background: "shell-2"), Line(120, "Stop"),
+        ];
+
+        // Act
+        SessionEventState running = Reduce(lines);
+        SessionEventState done = Reduce([.. lines, Line(200, "UserPromptSubmit", finished: "shell-1 shell-2"), Line(210, "Stop")]);
+
+        // Assert
+        Assert.Equal(2, running.Shells);
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(210), At(200)), done);
+    }
+
+    [Fact]
+    public void Reduce_NotificationForAnotherShell_KeepsTheLiveOneWorking()
+    {
+        // Act
+        SessionEventState state = Reduce(
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "PostToolUse", background: "shell-1"), Line(120, "Stop"),
+            Line(200, "UserPromptSubmit", finished: "shell-9"), Line(210, "Stop"),
+        ]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(200), Shells: 1), state);
+    }
+
+    [Fact]
+    public void Reduce_ShellStartedByASubagent_IsNotTracked()
+    {
+        // Act
+        SessionEventState state = Reduce(
+        [
+            Line(100, "UserPromptSubmit"), Line(105, "SubagentStart", agent: "sub-1"),
+            Line(110, "PostToolUse", agent: "sub-1", background: "shell-1"), Line(115, "SubagentStop", agent: "sub-1"),
+            Line(120, "Stop"),
+        ]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Ready, At(120), At(100)), state);
+    }
+
+    [Theory]
+    [InlineData("SessionEnd", null, SessionStatus.Ended)]
+    [InlineData("SessionStart", "resume", SessionStatus.Ready)]
+    public void Reduce_SessionEndOrStart_ClearsLiveShells(string name, string? source, SessionStatus expected)
+    {
+        // Act
+        SessionEventState state = Reduce(
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "PostToolUse", background: "shell-1"), Line(120, "Stop"),
+            Line(200, name, source: source),
+        ]);
+
+        // Assert
+        Assert.Equal(expected, state.Status);
+        Assert.Equal(0, state.Shells);
+    }
+
+    [Fact]
+    public void Reduce_CompactWithALiveShell_KeepsIt()
+    {
+        // Act
+        SessionEventState state = Reduce(
+        [
+            Line(100, "UserPromptSubmit"), Line(110, "PostToolUse", background: "shell-1"),
+            Line(115, "SessionStart", source: "compact"), Line(120, "Stop"),
+        ]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100), Shells: 1), state);
+    }
+
     // Far after every event, so a subagent that never stopped has expired.
     private static SessionEventState Reduce(IEnumerable<string> lines) => SessionEvents.Reduce(lines, At(1_000_000));
 
-    private static string Line(long t, string e, string? agent = null, string? notification = null, string? source = null)
+    private static string Line(
+        long t, string e, string? agent = null, string? notification = null, string? source = null,
+        string? background = null, string? finished = null)
     {
         string extras = (agent is null ? "" : $",\"a\":\"{agent}\"")
             + (notification is null ? "" : $",\"n\":\"{notification}\"")
-            + (source is null ? "" : $",\"s\":\"{source}\"");
+            + (source is null ? "" : $",\"s\":\"{source}\"")
+            + (background is null ? "" : $",\"b\":\"{background}\"")
+            + (finished is null ? "" : $",\"d\":\"{finished}\"");
         return $"{{\"t\":{t},\"e\":\"{e}\"{extras}}}";
     }
 
