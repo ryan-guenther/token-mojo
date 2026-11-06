@@ -328,7 +328,7 @@ Windows hides new tray icons under the **^** arrow beside the clock at first; dr
 - **Click a session row** to bring its terminal window forward. If there is no window, an ended session is resumed in a new Windows Terminal window, and one that still looks like it is running asks first ("Resume in a new terminal anyway?"). **Right-click** a row for Focus, Resume in new terminal, Open folder (in Explorer, through the WSL share for a WSL session) and Copy session ID; items that do not apply are greyed out. After a focus or resume the flyout closes.
 - **Alerts** appear as a notification when a session needs input, and when a turn that took `longTurnSeconds` or more finishes (30 by default, see [Settings](#settings)). While any session needs input or is ready, the ring's centre shows how many instead of the percentage (`9+` above nine) and the hover text starts with "N waiting". The first refresh after TokenMojo starts raises no alerts. A notification is skipped when that session's window is already in front, and clicking one brings the session's window forward (or offers to resume it).
 - **New Session…** (the right-click menu, the dashboard menu, or the **+** in the Sessions header) opens the [launcher](#starting-a-session-from-tokenmojo).
-- **Pop Out Window** opens the same dashboard in a window that stays on top; closing it remembers where it was.
+- **Pop Out Window** opens the same dashboard in a window that stays on top. It can be resized; once it is twice the dashboard's width, the sessions move into a second column beside the tiles. It reopens where it was left, at the same size.
 - **Launch at Login** (in the dashboard or the right-click menu) starts it automatically. **Quit** is in both too.
 
 The 5-hour and 7-day rings appear only for Claude Pro and Max subscribers; with an API key there are no rate limits, so only the context window shows.
@@ -465,7 +465,7 @@ bash uninstall.sh
 
 Removes the symlinks (or Windows launchers) at `~/.local/bin/cctokmon` and `~/.local/bin/tm` (a `tm` that is not cctokmon's is kept), the statusline script at `~/.claude/cctokmon-statusline.sh`, the state file at `~/.claude/cctokmon-state.json`, the per-session files in `~/.claude/cctokmon-sessions/`, the hook scripts at `~/.claude/cctokmon-hook.sh` and `~/.claude/cctokmon-worktree-init.sh`, and the `statusLine` entry (only when it is cctokmon's own script, not a custom one) and cctokmon's hook entries from `~/.claude/settings.json` (other hooks are left alone). Optionally removes `~/.config/cctokmon`.
 
-On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position) and `%APPDATA%\TokenMojo` (settings).
+On Windows, turn off **Launch at Login** and quit TokenMojo, then delete `%LOCALAPPDATA%\Programs\TokenMojo`, `%LOCALAPPDATA%\TokenMojo` (the saved pop-out position and size) and `%APPDATA%\TokenMojo` (settings).
 
 ---
 

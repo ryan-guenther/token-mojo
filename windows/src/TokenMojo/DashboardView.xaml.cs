@@ -10,7 +10,27 @@ public partial class DashboardView : UserControl
     // By id, because the refresh rebuilds the row elements and one can be replaced between press and release.
     private string? _pressedSessionId;
 
-    public DashboardView() => InitializeComponent();
+    // The width the tiles are laid out for; FillWindow lets the view grow past it.
+    private readonly double _naturalWidth;
+
+    // Every session row is the same height; known once one has been laid out.
+    private double _rowHeight;
+
+    // The star row of Tiles the sessions card sits in when there is one column.
+    private const int SessionsRow = 4;
+
+    private bool _fills;
+    private bool _wide;
+
+    public DashboardView()
+    {
+        InitializeComponent();
+        _naturalWidth = Width;
+        SizeChanged += (_, e) => SetWide(_fills && e.NewSize.Width >= WideWidth);
+    }
+
+    // Wide enough for the tiles at their natural width beside a session list just as wide.
+    private double WideWidth => 2 * _naturalWidth;
 
     /// <summary>Raised after a session's window was brought forward or its resume was started.</summary>
     public event EventHandler? SessionActed;
@@ -23,6 +43,60 @@ public partial class DashboardView : UserControl
         DataContext = model;
         Panel.Visibility = Visibility.Visible;
         MessageText.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Fills a window the user sizes, in place of the fixed width and session list height that keep the flyout on screen.
+    /// </summary>
+    public void FillWindow()
+    {
+        if (_fills) return;
+        _fills = true;
+        Width = double.NaN;
+        SessionScroll.MaxHeight = double.PositiveInfinity;
+    }
+
+    /// <summary>
+    /// The smallest size that shows every tile at its natural width and the given number of session rows,
+    /// or null while a message is shown or before the first layout.
+    /// Two columns need only the taller of the two; one column needs both stacked.
+    /// Until a row has been laid out, the session list counts at its full height.
+    /// </summary>
+    public Size? MinimumSize(int rows)
+    {
+        if (Panel.Visibility != Visibility.Visible || !IsLoaded) return null;
+        if (FirstRow() is { ActualHeight: > 0 } row) _rowHeight = row.ActualHeight;
+        double list = _rowHeight > 0 ? rows * _rowHeight : SessionScroll.ExtentHeight;
+        double sessions = SessionsCard.ActualHeight + SessionsCard.Margin.Top + SessionsCard.Margin.Bottom
+            - SessionScroll.ActualHeight + list;
+        // Every row but the sessions row holds tiles only; in two columns that row is the space left below them.
+        double tiles = Tiles.RowDefinitions.Where((_, index) => index != SessionsRow).Sum(definition => definition.ActualHeight);
+        double margins = ActualHeight - Panel.ActualHeight;
+        return new Size(_naturalWidth, margins + (_wide ? Math.Max(tiles, sessions) : tiles + sessions));
+    }
+
+    // Two columns: the tiles at their natural width on the left, the sessions spanning the full height on the right.
+    private void SetWide(bool wide)
+    {
+        if (wide == _wide) return;
+        _wide = wide;
+        // Moved between the grids, not spanned across the tile rows, which would stretch those rows to its height.
+        (wide ? Tiles : Panel).Children.Remove(SessionsCard);
+        (wide ? Panel : Tiles).Children.Add(SessionsCard);
+        Grid.SetColumn(SessionsCard, wide ? 1 : 0);
+        Grid.SetRow(SessionsCard, wide ? 0 : SessionsRow);
+        TilesColumn.Width = wide
+            ? new GridLength(_naturalWidth - Root.Margin.Left - Root.Margin.Right)
+            : new GridLength(1, GridUnitType.Star);
+        SessionsColumn.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        if (wide) SessionsCard.Margin = new Thickness(12, 0, 0, 0);
+        else SessionsCard.ClearValue(MarginProperty);
+    }
+
+    private FrameworkElement? FirstRow()
+    {
+        ItemsControl list = OpenRows.Items.Count > 0 ? OpenRows : ClosedRows;
+        return list.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
     }
 
     public void ShowMessage(string message)

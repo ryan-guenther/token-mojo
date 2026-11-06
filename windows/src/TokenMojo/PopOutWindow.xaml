@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:TokenMojo"
         Title="TokenMojo"
-        WindowStyle="SingleBorderWindow" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        WindowStyle="SingleBorderWindow" ResizeMode="CanResize" ShowInTaskbar="False" Topmost="True"
         SizeToContent="WidthAndHeight" WindowStartupLocation="CenterScreen"
         Background="{DynamicResource WindowBrush}">
     <local:DashboardView x:Name="Dashboard" />
