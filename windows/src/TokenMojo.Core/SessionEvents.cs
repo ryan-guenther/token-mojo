@@ -142,6 +142,8 @@ public static class SessionEvents
         {
             // A compact reloads the context mid-turn, so it is not a new session.
             "SessionStart" when hookEvent.Source == "compact" => state,
+            // tm started it with a prompt that Claude Code submits once it has loaded, so its turn starts now.
+            "SessionStart" when hookEvent.Prompted => Enter(state, SessionStatus.Working, t, t),
             "SessionStart" => Enter(state, SessionStatus.Ready, t, null),
             // A resumed session sends SessionStart first, so a prompt does not revive an ended one.
             "UserPromptSubmit" when ended => state,
@@ -183,7 +185,7 @@ public static class SessionEvents
             if (!root.TryGetProperty("e", out JsonElement name) || name.ValueKind != JsonValueKind.String) return null;
             return new HookEvent(
                 DateTimeOffset.FromUnixTimeSeconds(seconds), name.GetString()!, Text(root, "n"), Text(root, "s"), Text(root, "a"),
-                Text(root, "b"), Text(root, "d"));
+                Text(root, "b"), Text(root, "d"), Text(root, "p") == "1");
         }
         catch (Exception e) when (e is JsonException or ArgumentOutOfRangeException)
         {
@@ -205,7 +207,8 @@ public static class SessionEvents
         string? PromptAgent = null, SessionEventState? Interrupted = null);
 
     // Background is the task id of a shell a tool call left running; Finished the space-separated task ids a task
-    // notification reports done.
+    // notification reports done. Prompted marks a SessionStart whose session tm started with a prompt.
     private sealed record HookEvent(
-        DateTimeOffset Time, string Name, string? Notification, string? Source, string? Agent, string? Background, string? Finished);
+        DateTimeOffset Time, string Name, string? Notification, string? Source, string? Agent, string? Background, string? Finished,
+        bool Prompted);
 }

@@ -27,6 +27,38 @@ public class SessionEventsTests
     }
 
     [Fact]
+    public void Reduce_SessionStartedWithAPrompt_IsWorkingWhileItLoads()
+    {
+        // Act
+        SessionEventState state = Reduce([Line(100, "SessionStart", source: "startup", prompted: true)]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100)), state);
+    }
+
+    [Fact]
+    public void Reduce_SessionStartedWithAPrompt_KeepsTheTurnFromStartThroughThePrompt()
+    {
+        // Act
+        SessionEventState state = Reduce(
+            [Line(100, "SessionStart", source: "startup", prompted: true), Line(115, "UserPromptSubmit")]);
+
+        // Assert
+        Assert.Equal(new SessionEventState(SessionStatus.Working, At(100), At(100)), state);
+    }
+
+    [Fact]
+    public void Reduce_SessionStartedWithAPrompt_IsReadyWhenItsTurnStops()
+    {
+        // Act
+        SessionEventState state = Reduce(
+            [Line(100, "SessionStart", source: "startup", prompted: true), Line(115, "UserPromptSubmit"), Line(200, "Stop")]);
+
+        // Assert
+        Assert.Equal(SessionStatus.Ready, state.Status);
+    }
+
+    [Fact]
     public void Reduce_SessionStartAfterCompact_ChangesNothing()
     {
         // Act
@@ -985,9 +1017,10 @@ public class SessionEventsTests
 
     private static string Line(
         long t, string e, string? agent = null, string? notification = null, string? source = null,
-        string? background = null, string? finished = null)
+        string? background = null, string? finished = null, bool prompted = false)
     {
         string extras = (agent is null ? "" : $",\"a\":\"{agent}\"")
+            + (prompted ? ",\"p\":\"1\"" : "")
             + (notification is null ? "" : $",\"n\":\"{notification}\"")
             + (source is null ? "" : $",\"s\":\"{source}\"")
             + (background is null ? "" : $",\"b\":\"{background}\"")
