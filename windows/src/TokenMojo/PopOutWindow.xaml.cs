@@ -12,6 +12,9 @@ public partial class PopOutWindow : Window
     // Sent once a move or resize by the user ends, by mouse or keyboard.
     private const int ExitSizeMove = 0x0232;
 
+    // The session rows a resized pop-out always has room for.
+    private const int MinimumSessionRows = 3;
+
     private readonly IntPtr _handle;
 
     public PopOutWindow()
@@ -20,6 +23,7 @@ public partial class PopOutWindow : Window
         WindowChrome.Apply(this, round: false);
         _handle = new WindowInteropHelper(this).Handle;
         HwndSource.FromHwnd(_handle).AddHook(OnMessage);
+        LayoutUpdated += KeepMinimumSize;
         PopOutPlacement.Placement? placement = PopOutPlacement.Load();
         if (placement is null) return;
         WindowStartupLocation = WindowStartupLocation.Manual;
@@ -30,7 +34,6 @@ public partial class PopOutWindow : Window
             SizeToContent = SizeToContent.Manual;
             Width = placement.Width;
             Height = placement.Height;
-            Dashboard.FillWindow();
         }
     }
 
@@ -49,6 +52,18 @@ public partial class PopOutWindow : Window
         Hide();
     }
 
+    // The window fits its content until the user first resizes it, which turns SizeToContent off; from then on
+    // the dashboard fills it, down to a minimum recomputed after every layout, since the rings and the context bar
+    // come and go with the data. The window frame is whatever the window has beyond the dashboard.
+    private void KeepMinimumSize(object? sender, EventArgs e)
+    {
+        if (SizeToContent != SizeToContent.Manual) return;
+        Dashboard.FillWindow();
+        if (Dashboard.MinimumSize(MinimumSessionRows) is not { } content) return;
+        MinWidth = content.Width + ActualWidth - Dashboard.ActualWidth;
+        MinHeight = content.Height + ActualHeight - Dashboard.ActualHeight;
+    }
+
     // Saved when a move or resize ends, not on close: closing only hides it, and a pop-out left open
     // until Quit or signing out must keep where it was moved.
     private IntPtr OnMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -57,12 +72,10 @@ public partial class PopOutWindow : Window
         return IntPtr.Zero;
     }
 
-    // The window fits its content until the user first resizes it, which turns SizeToContent off.
-    // Only then is a size saved, so a pop-out that was only moved keeps fitting its content.
+    // A size is saved only once the user has resized it, so a pop-out that was only moved keeps fitting its content.
     private void SavePlacement()
     {
         bool sized = SizeToContent == SizeToContent.Manual;
-        if (sized) Dashboard.FillWindow();
         try
         {
             PopOutPlacement.Save(new(Native.TopLeft(_handle), sized ? ActualWidth : 0, sized ? ActualHeight : 0));

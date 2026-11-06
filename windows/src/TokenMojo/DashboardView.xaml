@@ -290,10 +290,10 @@
                         <StackPanel>
                             <TextBlock Text="No sessions" Style="{StaticResource Secondary}" Margin="8,4,0,4"
                                        Visibility="{Binding Sessions.IsEmpty, Converter={StaticResource VisibleWhen}}" />
-                            <ItemsControl ItemsSource="{Binding Sessions.OpenRows}" ItemTemplate="{StaticResource SessionRow}" />
+                            <ItemsControl x:Name="OpenRows" ItemsSource="{Binding Sessions.OpenRows}" ItemTemplate="{StaticResource SessionRow}" />
                             <TextBlock Text="Closed" Style="{StaticResource Secondary}" Margin="8,8,0,2"
                                        Visibility="{Binding Sessions.ClosedRows, Converter={StaticResource VisibleWhen}}" />
-                            <ItemsControl ItemsSource="{Binding Sessions.ClosedRows}" ItemTemplate="{StaticResource SessionRow}" />
+                            <ItemsControl x:Name="ClosedRows" ItemsSource="{Binding Sessions.ClosedRows}" ItemTemplate="{StaticResource SessionRow}" />
                         </StackPanel>
                     </ScrollViewer>
                 </DockPanel>

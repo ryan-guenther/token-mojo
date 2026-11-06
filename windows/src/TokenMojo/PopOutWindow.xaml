@@ -4,7 +4,6 @@
         xmlns:local="clr-namespace:TokenMojo"
         Title="TokenMojo"
         WindowStyle="SingleBorderWindow" ResizeMode="CanResize" ShowInTaskbar="False" Topmost="True"
-        MinWidth="300" MinHeight="200"
         SizeToContent="WidthAndHeight" WindowStartupLocation="CenterScreen"
         Background="{DynamicResource WindowBrush}">
     <local:DashboardView x:Name="Dashboard" />

@@ -10,7 +10,17 @@ public partial class DashboardView : UserControl
     // By id, because the refresh rebuilds the row elements and one can be replaced between press and release.
     private string? _pressedSessionId;
 
-    public DashboardView() => InitializeComponent();
+    // The width the tiles are laid out for; FillWindow lets the view grow past it.
+    private readonly double _naturalWidth;
+
+    // Every session row is the same height; known once one has been laid out.
+    private double _rowHeight;
+
+    public DashboardView()
+    {
+        InitializeComponent();
+        _naturalWidth = Width;
+    }
 
     /// <summary>Raised after a session's window was brought forward or its resume was started.</summary>
     public event EventHandler? SessionActed;
@@ -32,6 +42,25 @@ public partial class DashboardView : UserControl
     {
         Width = double.NaN;
         SessionScroll.MaxHeight = double.PositiveInfinity;
+    }
+
+    /// <summary>
+    /// The smallest size that shows every tile at its natural width and the given number of session rows,
+    /// or null while a message is shown or before the first layout.
+    /// Until a row has been laid out, the session list counts at its full height.
+    /// </summary>
+    public Size? MinimumSize(int rows)
+    {
+        if (Panel.Visibility != Visibility.Visible || !IsLoaded) return null;
+        if (FirstRow() is { ActualHeight: > 0 } row) _rowHeight = row.ActualHeight;
+        double list = _rowHeight > 0 ? rows * _rowHeight : SessionScroll.ExtentHeight;
+        return new Size(_naturalWidth, ActualHeight - SessionScroll.ActualHeight + list);
+    }
+
+    private FrameworkElement? FirstRow()
+    {
+        ItemsControl list = OpenRows.Items.Count > 0 ? OpenRows : ClosedRows;
+        return list.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
     }
 
     public void ShowMessage(string message)
